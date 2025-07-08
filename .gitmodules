@@ -1,0 +1,12 @@
+[submodule "shared-lib"]
+	path = shared-lib
+	url = https://github.com/ryongmi/krgeobuk-shared-lib.git
+[submodule "auth-server"]
+	path = auth-server
+	url = https://github.com/ryongmi/auth-server.git
+[submodule "authz-server"]
+	path = authz-server
+	url = https://github.com/ryongmi/authz-server.git
+[submodule "portal-server"]
+	path = portal-server
+	url = https://github.com/ryongmi/portal-server.git
