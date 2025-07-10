@@ -10,3 +10,6 @@
 [submodule "portal-server"]
 	path = portal-server
 	url = https://github.com/ryongmi/portal-server.git
+[submodule "portal-client"]
+	path = portal-client
+	url = https://github.com/ryongmi/portal-client.git
