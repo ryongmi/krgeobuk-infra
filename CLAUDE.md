@@ -564,3 +564,185 @@ async createPermission(
 ```
 
 이 가이드를 따르면 krgeobuk 생태계 전반에서 일관된 API 설계와 문서화를 보장할 수 있습니다.
+
+## 공통패키지 DTO 대체 가이드
+
+각 마이크로서비스의 도메인 모듈에서 로컬 DTO를 공통 라이브러리의 DTO로 대체하여 코드 일관성과 재사용성을 높이는 가이드입니다.
+
+### 대체 대상 DTO 식별
+
+**1. 공통패키지에서 대체 가능한 DTO 확인**
+```bash
+# 공통패키지의 DTO 확인
+ls /shared-lib/packages/[domain]/src/dtos/
+
+# 예: role 도메인
+ls /shared-lib/packages/role/src/dtos/
+# ├── create.dto.ts          -> CreateRoleDto
+# ├── update.dto.ts          -> UpdateRoleDto  
+# ├── detail.dto.ts          -> RoleDetailDto
+# ├── search-query.dto.ts    -> RoleSearchQueryDto
+# └── search-result.dto.ts   -> RoleSearchResultDto
+```
+
+**2. 마이크로서비스의 로컬 DTO 확인**
+```bash
+# 마이크로서비스의 로컬 DTO 확인
+ls /[service]/src/modules/[domain]/dtos/
+
+# 예: authz-server의 role 모듈
+ls /authz-server/src/modules/role/dtos/
+# ├── create-role.dto.ts           -> 대체 대상
+# ├── update-role.dto.ts           -> 대체 대상
+# ├── role-response.dto.ts         -> 대체 대상 (DetailDto로)
+# └── role-search-query.dto.ts     -> 대체 대상
+```
+
+### 대체 작업 프로세스
+
+**1. 누락된 공통 DTO 생성 (필요시)**
+
+만약 공통패키지에 필요한 DTO가 없다면 먼저 생성합니다:
+
+```typescript
+// shared-lib/packages/[domain]/src/dtos/create.dto.ts
+import { IsValid[Field] } from '@krgeobuk/shared/[domain]';
+
+export class Create[Domain]Dto implements Create[Domain] {
+  @IsValid[Field]()
+  field!: string;
+  
+  @IsValid[Field]({ isOptional: true })
+  optionalField?: string | null;
+}
+
+// shared-lib/packages/[domain]/src/dtos/update.dto.ts  
+import { ExposeUuidIdDto } from '@krgeobuk/core/dtos';
+
+export class Update[Domain]Dto extends ExposeUuidIdDto implements Update[Domain] {
+  @IsValid[Field]({ isOptional: true })
+  field?: string;
+}
+```
+
+필요한 인터페이스도 함께 생성:
+```typescript
+// shared-lib/packages/[domain]/src/interfaces/create.interface.ts
+export interface Create[Domain] {
+  field: string;
+  optionalField?: string | null;
+}
+
+// shared-lib/packages/[domain]/src/interfaces/update.interface.ts
+import type { UuidId } from '@krgeobuk/core/interfaces';
+
+export interface Update[Domain] extends UuidId {
+  field?: string;
+}
+```
+
+**2. 컨트롤러 임포트 변경**
+
+```typescript
+// Before: 로컬 DTO 임포트
+import { CreateRoleDto, UpdateRoleDto, RoleResponseDto } from './dtos/index.js';
+
+// After: 공통패키지 DTO 임포트
+import {
+  CreateRoleDto,
+  UpdateRoleDto, 
+  RoleDetailDto,        // RoleResponseDto -> RoleDetailDto로 대체
+  RoleSearchQueryDto,
+  RoleSearchResultDto,
+} from '@krgeobuk/role/dtos';
+```
+
+**3. 서비스 임포트 변경**
+
+```typescript
+// Before: 로컬 DTO 임포트
+import { RoleSearchQueryDto } from './dtos/role-search-query.dto.js';
+
+// After: 공통패키지 DTO 임포트
+import { RoleSearchQueryDto } from '@krgeobuk/role/dtos';
+```
+
+**4. 타입 시그니처 업데이트**
+
+```typescript
+// Before: 로컬 ResponseDto 사용
+async createRole(): Promise<RoleResponseDto> {
+  // ...
+}
+
+// After: 공통패키지 DetailDto 사용  
+async createRole(): Promise<RoleDetailDto> {
+  // ...
+}
+```
+
+**5. 로컬 DTO 파일 정리**
+
+```typescript
+// dtos/index.ts 업데이트
+// Before:
+export * from './create-role.dto.js';
+export * from './update-role.dto.js';
+export * from './role-response.dto.js';
+
+// After:
+// DTO들은 @krgeobuk/role/dtos 공통패키지에서 가져옵니다.
+```
+
+로컬 DTO 파일들 삭제:
+```bash
+rm create-role.dto.ts update-role.dto.ts role-response.dto.ts role-search-query.dto.ts
+```
+
+### 장점 및 효과
+
+**1. 코드 일관성**
+- 모든 서비스에서 동일한 유효성 검사 규칙 적용
+- 통일된 API 스키마 및 문서화
+
+**2. 유지보수성**
+- 중앙화된 DTO 관리로 변경사항 전파 용이
+- 중복 코드 제거로 유지보수 비용 절감
+
+**3. 타입 안전성**
+- 공통패키지의 고급 데코레이터 활용 (`@IsValidRoleName`, `@ExposeRoleName` 등)
+- 컴파일 타임 타입 검증 강화
+
+**4. API 문서화 향상**
+- Swagger 문서의 일관성 보장
+- 도메인별 표준화된 스키마 제공
+
+### 체크리스트
+
+대체 작업 완료 시 다음 사항들을 확인:
+
+- [ ] 공통패키지에 필요한 모든 DTO가 존재하는가?
+- [ ] 공통패키지에 필요한 인터페이스가 모두 정의되어 있는가?
+- [ ] 컨트롤러에서 공통패키지 DTO를 올바르게 임포트하고 있는가?
+- [ ] 서비스에서 공통패키지 DTO를 올바르게 임포트하고 있는가?
+- [ ] ResponseDto가 DetailDto로 올바르게 대체되었는가?
+- [ ] 로컬 DTO 파일들이 모두 삭제되었는가?
+- [ ] dtos/index.ts에서 로컬 export가 제거되었는가?
+- [ ] 빌드가 성공적으로 완료되는가?
+- [ ] 타입 검사가 통과하는가?
+
+### 실제 적용 사례
+
+**Role 모듈 대체 예시:**
+- `CreateRoleDto` → `@krgeobuk/role/dtos`
+- `UpdateRoleDto` → `@krgeobuk/role/dtos`  
+- `RoleSearchQueryDto` → `@krgeobuk/role/dtos`
+- `RoleResponseDto` → `RoleDetailDto` (`@krgeobuk/role/dtos`)
+
+**Permission 모듈 대체 예시:**
+- `CreatePermissionDto` → `@krgeobuk/permission/dtos` (새로 생성)
+- `UpdatePermissionDto` → `@krgeobuk/permission/dtos` (새로 생성)
+- `PermissionSearchQueryDto` → `@krgeobuk/permission/dtos`
+- `PermissionResponseDto` → `PermissionDetailDto` (`@krgeobuk/permission/dtos`)
+
+이 가이드를 따르면 마이크로서비스 간 DTO 일관성을 보장하고 공통 라이브러리의 이점을 최대한 활용할 수 있습니다.
