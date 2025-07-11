@@ -798,6 +798,365 @@ rm create-role.dto.ts update-role.dto.ts role-response.dto.ts role-search-query.
 
 이 가이드를 따르면 마이크로서비스 간 DTO 일관성을 보장하고 공통 라이브러리의 이점을 최대한 활용할 수 있습니다.
 
+## 공통 패키지 개발 표준
+
+### 패키지 구조 및 설정 표준
+
+#### 1. package.json 필수 설정
+```json
+{
+  "name": "@krgeobuk/package-name",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "publishConfig": {
+    "registry": "http://localhost:4873/"
+  }
+}
+```
+
+**핵심 설정 요소:**
+- **`"sideEffects": false`**: 트리 쉐이킹 활성화로 번들 크기 최적화
+- **`"files": ["dist"]`**: 배포 시 빌드 결과물만 포함
+- **`"type": "module"`**: ESM 모듈 시스템 사용
+
+#### 2. exports 및 typesVersions 설정
+```json
+{
+  "exports": {
+    ".": "./dist/index.js",
+    "./decorators": "./dist/decorators/index.js",
+    "./dtos": "./dist/dtos/index.js",
+    "./exception": "./dist/exception/index.js",
+    "./interfaces": "./dist/interfaces/index.js",
+    "./response": "./dist/response/index.js"
+  },
+  "typesVersions": {
+    "*": {
+      "decorators": ["dist/decorators/index.d.ts"],
+      "decorators/*": ["dist/decorators/*"],
+      "dtos": ["dist/dtos/index.d.ts"],
+      "dtos/*": ["dist/dtos/*"],
+      "exception": ["dist/exception/index.d.ts"],
+      "exception/*": ["dist/exception/*"],
+      "interfaces": ["dist/interfaces/index.d.ts"],
+      "interfaces/*": ["dist/interfaces/*"],
+      "response": ["dist/response/index.d.ts"],
+      "response/*": ["dist/response/*"]
+    }
+  }
+}
+```
+
+#### 3. 의존성 관리 표준
+```json
+{
+  "dependencies": {},
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
+    "@nestjs/swagger": "^8.0.7",
+    "@types/express": "^5.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@krgeobuk/core": "workspace:*",
+    "@krgeobuk/shared": "workspace:*",
+    "@krgeobuk/tsconfig": "workspace:*",
+    // ... peer dependencies를 dev에도 포함
+  }
+}
+```
+
+**원칙:**
+- **dependencies**: 빈 객체로 유지
+- **peerDependencies**: 외부 라이브러리 의존성 명시
+- **devDependencies**: 개발 시 필요한 모든 의존성 포함
+
+### 메시지 및 응답 패턴 표준
+
+#### 1. 메시지 상수 구조 (Messages)
+```typescript
+export const DomainMessage = {
+  /**  =============================================================================
+   *
+   *        000 ~ 099	에러 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  OPERATION_ERROR: '작업 수행 중 오류가 발생했습니다.',
+  VALIDATION_ERROR: '유효성 검사 중 오류가 발생했습니다.',
+  NETWORK_ERROR: '네트워크 통신 중 오류가 발생했습니다.',
+
+  /**  =============================================================================
+   *
+   *        100 ~ 199 에러 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  ENTITY_NOT_FOUND: '해당 엔터티를 찾을 수 없습니다.',
+  ENTITY_ALREADY_EXISTS: '이미 존재하는 엔터티입니다.',
+  INVALID_INPUT: '잘못된 입력값입니다.',
+
+  /**  =============================================================================
+   *
+   *        200 ~ 299 성공 응답 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  OPERATION_SUCCESS: '작업이 성공적으로 완료되었습니다.',
+  FETCH_SUCCESS: '조회가 성공적으로 완료되었습니다.',
+  CREATE_SUCCESS: '생성이 성공적으로 완료되었습니다.',
+  UPDATE_SUCCESS: '수정이 성공적으로 완료되었습니다.',
+  DELETE_SUCCESS: '삭제가 성공적으로 완료되었습니다.',
+} as const;
+
+export type DomainMessageType = typeof DomainMessage[keyof typeof DomainMessage];
+```
+
+#### 2. 응답 클래스 구조 (Response)
+```typescript
+import { DomainCode } from '../codes/index.js';
+import { DomainMessage } from '../messages/index.js';
+
+export class DomainResponse {
+  /**  =============================================================================
+   *
+   *        200 ~ 299	성공 응답 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  static readonly FETCH_SUCCESS = {
+    code: DomainCode.FETCH_SUCCESS,
+    message: DomainMessage.FETCH_SUCCESS,
+    statusCode: 200,
+  };
+
+  static readonly CREATE_SUCCESS = {
+    code: DomainCode.CREATE_SUCCESS,
+    message: DomainMessage.CREATE_SUCCESS,
+    statusCode: 201,
+  };
+
+  static readonly UPDATE_SUCCESS = {
+    code: DomainCode.UPDATE_SUCCESS,
+    message: DomainMessage.UPDATE_SUCCESS,
+    statusCode: 200,
+  };
+
+  static readonly DELETE_SUCCESS = {
+    code: DomainCode.DELETE_SUCCESS,
+    message: DomainMessage.DELETE_SUCCESS,
+    statusCode: 204,
+  };
+}
+```
+
+#### 3. 에러 클래스 구조 (Error)
+```typescript
+import { DomainCode } from '../codes/index.js';
+import { DomainMessage } from '../messages/index.js';
+
+export class DomainError {
+  /**  =============================================================================
+   *
+   *        000 ~ 099	에러 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  static readonly OPERATION_ERROR = {
+    code: DomainCode.OPERATION_ERROR,
+    message: DomainMessage.OPERATION_ERROR,
+    statusCode: 500,
+  };
+
+  static readonly VALIDATION_ERROR = {
+    code: DomainCode.VALIDATION_ERROR,
+    message: DomainMessage.VALIDATION_ERROR,
+    statusCode: 400,
+  };
+
+  /**  =============================================================================
+   *
+   *        100 ~ 199 에러 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  static readonly ENTITY_NOT_FOUND = {
+    code: DomainCode.ENTITY_NOT_FOUND,
+    message: DomainMessage.ENTITY_NOT_FOUND,
+    statusCode: 404,
+  };
+
+  static readonly ENTITY_ALREADY_EXISTS = {
+    code: DomainCode.ENTITY_ALREADY_EXISTS,
+    message: DomainMessage.ENTITY_ALREADY_EXISTS,
+    statusCode: 409,
+  };
+}
+```
+
+#### 4. 예외 클래스 구조 (Exception)
+```typescript
+import { HttpException } from '@nestjs/common';
+import { DomainError } from './domain.error.js';
+
+export class DomainException {
+  /**  =============================================================================
+   *
+   *        000 ~ 099	에러 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  /** 작업 수행 중 서버 오류 */
+  static operationError(): HttpException {
+    const e = DomainError.OPERATION_ERROR;
+    return new HttpException({ code: e.code, message: e.message }, e.statusCode);
+  }
+
+  /** 유효성 검사 중 오류 */
+  static validationError(): HttpException {
+    const e = DomainError.VALIDATION_ERROR;
+    return new HttpException({ code: e.code, message: e.message }, e.statusCode);
+  }
+
+  /**  =============================================================================
+   *
+   *        100 ~ 199 에러 코드
+   *
+   *   =============================================================================
+   */
+  /** */
+
+  /** 엔터티를 찾을 수 없음 */
+  static entityNotFound(): HttpException {
+    const e = DomainError.ENTITY_NOT_FOUND;
+    return new HttpException({ code: e.code, message: e.message }, e.statusCode);
+  }
+
+  /** 이미 존재하는 엔터티 */
+  static entityAlreadyExists(): HttpException {
+    const e = DomainError.ENTITY_ALREADY_EXISTS;
+    return new HttpException({ code: e.code, message: e.message }, e.statusCode);
+  }
+}
+```
+
+### 공통 패키지 개발 체크리스트
+
+#### 패키지 초기 설정
+- [ ] `package.json`에 `"sideEffects": false` 추가
+- [ ] `exports` 필드로 세부 경로 매핑 설정
+- [ ] `typesVersions` 필드로 TypeScript 경로 지원
+- [ ] `files` 필드로 배포 파일 제한
+- [ ] `peerDependencies` 사용으로 의존성 최적화
+
+#### 코드 구조 표준
+- [ ] 메시지 상수에 에러 코드 범위별 주석 추가
+- [ ] Response/Error 클래스에 `static readonly` 패턴 적용
+- [ ] Exception 클래스에 `static factory method` 패턴 적용
+- [ ] 코드 범위별 섹션 구분 주석 추가
+- [ ] 타입 안전성을 위한 타입 내보내기 추가
+
+#### 트리 쉐이킹 최적화
+- [ ] 모든 export는 명시적으로 선언
+- [ ] 사이드 이펙트 없는 순수 함수/상수만 포함
+- [ ] 동적 import 사용 지양
+- [ ] 패키지 레벨 re-export 최소화
+
+### 트리 쉐이킹 전략
+
+#### 하이브리드 트리 쉐이킹 방식
+공통 패키지의 복잡도와 사용 패턴에 따라 적절한 트리 쉐이킹 전략을 선택:
+
+**1. 도메인 레벨 트리 쉐이킹 (간단한 패키지)**
+```json
+{
+  "exports": {
+    "./oauth": {
+      "import": "./dist/oauth/index.js",
+      "types": "./dist/oauth/index.d.ts"
+    },
+    "./permission": {
+      "import": "./dist/permission/index.js", 
+      "types": "./dist/permission/index.d.ts"
+    }
+  }
+}
+```
+
+**장점**: 설정 간단, 관리 용이, 도메인 응집성
+**적용**: 단순한 DTO/인터페이스 중심 패키지
+
+**2. 기능 레벨 트리 쉐이킹 (복잡한 패키지)**
+```json
+{
+  "exports": {
+    "./role-permission": {
+      "import": "./dist/role-permission/index.js",
+      "types": "./dist/role-permission/index.d.ts"
+    },
+    "./role-permission/dtos": {
+      "import": "./dist/role-permission/dtos/index.js",
+      "types": "./dist/role-permission/dtos/index.d.ts"
+    },
+    "./role-permission/response": {
+      "import": "./dist/role-permission/response/index.js",
+      "types": "./dist/role-permission/response/index.d.ts"
+    },
+    "./role-permission/exception": {
+      "import": "./dist/role-permission/exception/index.js",
+      "types": "./dist/role-permission/exception/index.d.ts"
+    }
+  }
+}
+```
+
+**장점**: 극도로 세분화된 import, 최적의 번들 크기
+**적용**: 다양한 기능 모듈을 포함하는 복합 패키지
+
+#### 선택 기준
+- **단순 패키지**: 도메인 레벨 (shared 패키지 방식)
+- **복합 패키지**: 기능 레벨 (authz-relations 패키지 방식)
+- **패키지 크기**: 5개 이하 모듈 → 도메인 레벨, 5개 초과 → 기능 레벨
+
+### 공통 패키지 네이밍 규칙
+
+#### 파일 네이밍
+- **상수**: `domain-name.constant.ts`
+- **메시지**: `domain-name.message.ts`
+- **응답**: `domain-name.response.ts`
+- **에러**: `domain-name.error.ts`
+- **예외**: `domain-name.exception.ts`
+
+#### 클래스/상수 네이밍
+- **코드 상수**: `DomainCode`
+- **메시지 상수**: `DomainMessage`
+- **응답 클래스**: `DomainResponse`
+- **에러 클래스**: `DomainError`
+- **예외 클래스**: `DomainSpecificException`
+
+이 표준을 따르면 트리 쉐이킹이 가능하고 일관성 있는 공통 패키지를 개발할 수 있습니다.
+
 ## NestJS 서버 공통 코딩 컨벤션
 
 krgeobuk 생태계의 모든 NestJS 백엔드 서비스 (auth-server, authz-server, portal-server 등)에서 공통으로 적용해야 하는 코딩 규칙과 베스트 프랙티스입니다.
