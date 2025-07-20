@@ -2,9 +2,262 @@
 
 ## 📋 개요
 
-krgeobuk-infra 프로젝트의 현재 MSA 아키텍처에 BFF(Backend For Frontend) 패턴을 도입하여 클라이언트별 최적화와 도메인 서비스의 단일책임원칙(SRP) 준수를 목표로 합니다.
+krgeobuk-infra 프로젝트의 아키텍처 개선을 위한 단계적 접근 방법을 제시합니다. **1단계로 SRP 리팩토링을 통해 도메인 서비스를 개선**하고, **2단계에서 필요시 BFF 패턴을 도입**하여 클라이언트별 최적화를 달성합니다.
 
-## 🎯 BFF 도입 배경
+## 🎯 전략 결정: SRP 리팩토링 우선 추진
+
+### 현재 결정사항
+**Phase 1: SRP 리팩토링 먼저 진행** (현재 선택)
+- 기존 아키텍처 유지하면서 점진적 개선
+- 즉시 개선 효과 (테스트 용이성, 코드 가독성)
+- 낮은 리스크와 학습 비용
+- BFF 도입을 위한 기반 준비
+
+**Phase 2: BFF 도입 고려** (향후 필요시)
+- 모바일 앱 개발 확정 시
+- 외부 API 연동 요구 증가 시
+- 성능 최적화 한계 도달 시
+
+## 🔧 Phase 1: SRP 리팩토링 상세 계획
+
+### 현재 문제점 분석
+- **RoleService**: 5개 외부 의존성, 복잡한 Aggregation 로직
+- **PermissionService**: 도메인 경계 위반, 교차 서비스 의존성
+- **UserRoleService**: 외부 통신과 비즈니스 로직 혼재
+
+### krgeobuk 최적화 리팩토링 전략
+
+#### 전략 1: krgeobuk 패키지 중심 분리 (최우선 권장)
+```typescript
+// krgeobuk 생태계 활용한 분리
+authz-server/src/modules/role/
+├── services/
+│   ├── role-data.service.ts        # 순수 데이터 레이어
+│   ├── role-business.service.ts    # 비즈니스 로직 레이어  
+│   ├── role-tcp.service.ts         # TCP 통신 레이어
+│   └── role.service.ts             # 조정 레이어 (Facade)
+├── clients/                        # TCP 클라이언트 분리
+│   ├── auth-client.service.ts      # @krgeobuk/clients 활용
+│   ├── portal-client.service.ts
+│   └── permission-client.service.ts
+├── aggregators/                    # 집계 로직 분리
+│   ├── role-enrichment.aggregator.ts
+│   └── role-statistics.aggregator.ts
+└── strategies/                     # 전략 패턴 적용
+    ├── role-cache.strategy.ts      # @krgeobuk/cache 활용
+    ├── role-fallback.strategy.ts   # @krgeobuk/fallback 활용
+    └── role-validation.strategy.ts # @krgeobuk/validation 활용
+```
+
+#### 전략 2: CQRS 패턴 (보조)
+```typescript
+// 읽기/쓰기 책임 분리 (필요시 추가 적용)
+├── RoleCommandService (생성, 수정, 삭제)
+├── RoleQueryService (조회, 검색, 집계)
+└── RoleService (위임 및 조정)
+```
+
+#### 공통 서비스 패키지 전략
+```typescript
+// shared-lib/packages/msa-commons/
+├── strategies/
+│   ├── tcp-fallback.strategy.ts    # TCP 호출 실패 시 폴백
+│   ├── cache.strategy.ts           # 도메인별 캐싱 전략
+│   └── validation.strategy.ts      # 비즈니스 검증 전략
+├── aggregators/
+│   ├── base-enrichment.aggregator.ts
+│   └── batch-processor.aggregator.ts
+├── clients/
+│   ├── tcp-client.base.ts
+│   └── microservice-client.factory.ts
+└── types/
+    ├── tcp-message.types.ts
+    └── enrichment.types.ts
+```
+
+### 개선된 구현 로드맵
+
+#### Week 1: 기반 서비스 구축
+- [ ] `@krgeobuk/msa-commons` 패키지 생성
+- [ ] TcpFallbackStrategy, CacheStrategy 구현
+- [ ] RoleDataService 분리 및 테스트
+- [ ] 기본 TCP 클라이언트 베이스 구현
+
+#### Week 2: TCP 레이어 분리
+- [ ] RoleTcpService 구현 (폴백 전략 포함)
+- [ ] 기존 외부 호출을 TCP 서비스로 이관
+- [ ] 배치 처리 최적화 적용
+- [ ] TCP 통신 단위 테스트
+
+#### Week 3: 비즈니스 레이어 구축
+- [ ] RoleBusinessService 구현
+- [ ] RoleEnrichmentAggregator 구현
+- [ ] 비즈니스 검증 로직 분리
+- [ ] 통계 및 집계 로직 최적화
+
+#### Week 4: 통합 및 최적화
+- [ ] RoleService Facade 완성
+- [ ] 캐싱 전략 적용 및 최적화
+- [ ] API 호환성 검증
+- [ ] 성능 테스트 및 메모리 사용량 체크
+
+#### Week 5-6: 다른 도메인 적용
+- [ ] Permission, UserRole 서비스에 동일 패턴 적용
+- [ ] 공통 서비스 재사용성 검증
+- [ ] 중간테이블 도메인 최적화 적용
+- [ ] 통합 테스트 및 문서화
+
+### 핵심 구현 예시
+
+#### 1. RoleDataService (순수 데이터 레이어)
+```typescript
+// ✅ 오직 데이터 접근만 담당
+@Injectable()
+export class RoleDataService {
+  private readonly logger = new Logger(RoleDataService.name);
+
+  constructor(private readonly roleRepo: RoleRepository) {}
+
+  // ==================== BASIC CRUD ====================
+  async findById(roleId: string): Promise<RoleEntity | null> {
+    return this.roleRepo.findOneById(roleId);
+  }
+
+  async findByIdOrFail(roleId: string): Promise<RoleEntity> {
+    const role = await this.findById(roleId);
+    if (!role) throw RoleException.roleNotFound();
+    return role;
+  }
+
+  async create(attrs: CreateRoleAttrs): Promise<RoleEntity> {
+    const role = this.roleRepo.create(attrs);
+    return this.roleRepo.save(role);
+  }
+
+  async search(query: RoleSearchQuery): Promise<PaginatedResult<RoleEntity>> {
+    return this.roleRepo.searchWithPagination(query);
+  }
+
+  async existsByName(name: string, excludeId?: string): Promise<boolean> {
+    return this.roleRepo.existsByName(name, excludeId);
+  }
+}
+```
+
+#### 2. RoleTcpService (TCP 통신 레이어)
+```typescript
+// ✅ TCP 통신만 담당 + @krgeobuk/clients 활용
+@Injectable()
+export class RoleTcpService {
+  constructor(
+    @Inject('AUTH_SERVICE') private readonly authClient: ClientProxy,
+    @Inject('PORTAL_SERVICE') private readonly portalClient: ClientProxy,
+    private readonly tcpFallbackStrategy: TcpFallbackStrategy // @krgeobuk/fallback
+  ) {}
+
+  async fetchUsers(userIds: string[]): Promise<User[]> {
+    if (userIds.length === 0) return [];
+
+    try {
+      return await firstValueFrom(
+        this.authClient.send<User[]>('user.findByIds', { userIds })
+      );
+    } catch (error) {
+      return this.tcpFallbackStrategy.getUsersFallback(userIds);
+    }
+  }
+
+  async fetchRoleRelatedData(roleId: string): Promise<{
+    userIds: string[];
+    serviceIds: string[];
+    permissionIds: string[];
+  }> {
+    const [userIds, serviceIds, permissionIds] = await Promise.allSettled([
+      this.fetchUserIdsByRole(roleId),
+      this.fetchServiceIdsByRole(roleId),
+      this.fetchPermissionIdsByRole(roleId)
+    ]);
+
+    return {
+      userIds: this.extractSettledValue(userIds, []),
+      serviceIds: this.extractSettledValue(serviceIds, []),
+      permissionIds: this.extractSettledValue(permissionIds, [])
+    };
+  }
+}
+```
+
+#### 3. RoleBusinessService (비즈니스 로직 레이어)
+```typescript
+// ✅ 순수 비즈니스 로직만 담당
+@Injectable()
+export class RoleBusinessService {
+  constructor(
+    private readonly roleDataService: RoleDataService,
+    private readonly roleTcpService: RoleTcpService,
+    private readonly roleEnrichmentAggregator: RoleEnrichmentAggregator,
+    private readonly roleValidationStrategy: RoleValidationStrategy // @krgeobuk/validation
+  ) {}
+
+  async createRole(attrs: CreateRoleAttrs): Promise<RoleEntity> {
+    // 1. 비즈니스 검증
+    await this.roleValidationStrategy.validateCreateRole(attrs);
+    
+    // 2. 중복 확인
+    const exists = await this.roleDataService.existsByName(attrs.name);
+    if (exists) throw RoleException.roleAlreadyExists();
+
+    // 3. 생성
+    return this.roleDataService.create(attrs);
+  }
+
+  async getRoleWithDetails(roleId: string): Promise<RoleDetail> {
+    const role = await this.roleDataService.findByIdOrFail(roleId);
+    return this.roleEnrichmentAggregator.enrichRole(role);
+  }
+}
+```
+
+#### 4. 최종 RoleService (Facade 패턴)
+```typescript
+// ✅ 단순 위임 및 조정만 담당
+@Injectable()
+export class RoleService {
+  constructor(
+    private readonly roleDataService: RoleDataService,
+    private readonly roleBusinessService: RoleBusinessService
+  ) {}
+
+  // Simple CRUD (Direct Delegation)
+  async findById(roleId: string): Promise<RoleEntity | null> {
+    return this.roleDataService.findById(roleId);
+  }
+
+  // Business Operations (Business Delegation)
+  async createRole(attrs: CreateRoleAttrs): Promise<RoleEntity> {
+    return this.roleBusinessService.createRole(attrs);
+  }
+
+  // Enriched Operations (Business Delegation)
+  async getRoleById(roleId: string): Promise<RoleDetail> {
+    return this.roleBusinessService.getRoleWithDetails(roleId);
+  }
+}
+```
+
+### 리팩토링 후 기대 효과
+
+| 측면 | Before | After |
+|------|--------|-------|
+| **의존성** | RoleService: 5개 외부 클라이언트 | RoleDataService: 1개 레포지토리만 |
+| **메서드 복잡도** | 50-100줄 복잡 로직 | 5-20줄 단순 로직 |
+| **테스트** | 복잡 (Mock 5개) | 간단 (Mock 1개) |
+| **재사용성** | 낮음 (특정 용도) | 높음 (순수 도메인) |
+| **유지보수** | 어려움 | 쉬움 |
+| **krgeobuk 활용도** | 낮음 | 높음 (@krgeobuk/authz-commons) |
+| **TCP 최적화** | 개별 처리 | 배치 처리 + 폴백 전략 |
+
+## 🎯 BFF 도입 배경 (Phase 2용)
 
 ### 현재 문제점
 - **SRP 위반**: 도메인 서비스들이 Aggregation, 외부 통신, 데이터 변환 등 다중 책임 수행
@@ -603,26 +856,46 @@ volumes:
   redis_data:
 ```
 
-## 🚀 단계별 도입 계획
+## 🚀 전체 로드맵
 
-### Phase 1: API Gateway + BFF-Web 구축
-**목표**: 현재 portal-client 최적화 및 도메인 서비스 SRP 준수
+### 현재 진행: Phase 1 - krgeobuk 최적화 SRP 리팩토링 (6주)
+**목표**: krgeobuk 생태계를 활용한 도메인 서비스 SRP 준수
+- Week 1: 기반 서비스 구축 (@krgeobuk/authz-commons 패키지)
+- Week 2: TCP 레이어 분리 (폴백 전략 + 배치 처리)
+- Week 3: 비즈니스 레이어 구축 (집계 로직 최적화)
+- Week 4: 통합 및 최적화 (캐싱 전략 + API 호환성)
+- Week 5-6: 다른 도메인 적용 (중간테이블 도메인 최적화)
+- **핵심 개선점**: @krgeobuk 패키지 활용, TCP 최적화, 점진적 마이그레이션
+
+**예상 기간**: 6주 **← 현재 진행 중**
+
+### 향후 계획: Phase 2 - BFF 도입 고려 (필요시)
+
+#### 조건부 실행 - 다음 중 하나 이상 발생 시
+- ✅ **모바일 앱 개발 확정**
+- ✅ **외부 API 연동 요구 증가** (3개 이상 외부 시스템)
+- ✅ **성능 최적화 한계 도달** (현재 구조로 해결 불가)
+- ✅ **클라이언트 다양화** (웹 외 2개 이상 클라이언트)
+
+#### BFF 도입 시 단계별 계획
+
+**Phase 2A: API Gateway + BFF-Web 구축**
+**목표**: 웹 클라이언트 최적화
 - API Gateway 구축
-- BFF-Web 개발 (admin-portal, user-portal, reports, analytics)
-- 기존 도메인 서비스 리팩토링 (Aggregation 로직 BFF로 이관)
+- BFF-Web 개발 (SRP 리팩토링된 서비스 활용)
 - portal-client API 호출 경로 변경
 
 **예상 기간**: 4-6주
 
-### Phase 2: BFF-Mobile 추가 구축
-**목표**: 모바일 앱 지원 준비
+**Phase 2B: BFF-Mobile 추가 구축**  
+**목표**: 모바일 앱 지원
 - BFF-Mobile 개발 (mobile-auth, mobile-dashboard, offline, notifications)
 - 모바일 특화 인증/캐싱 전략 구현
 - 푸시 알림 서비스 구축
 
 **예상 기간**: 3-4주
 
-### Phase 3: BFF-Server 구축
+**Phase 2C: BFF-Server 구축**
 **목표**: 외부 시스템 연동 및 대량 처리 지원
 - BFF-Server 개발 (service-auth, bulk-operations, integration, monitoring)
 - 외부 API 연동 인터페이스 구축
@@ -630,8 +903,8 @@ volumes:
 
 **예상 기간**: 2-3주
 
-### Phase 4: GraphQL Federation 고려
-**목표**: 차세대 API 아키텍처 준비
+**Phase 3: GraphQL Federation 고려**
+**목표**: 차세대 API 아키텍처 준비 (장기 계획)
 - GraphQL 스키마 설계
 - Apollo Federation 도입 검토
 - 점진적 마이그레이션 계획
@@ -707,12 +980,33 @@ interface BFFLogEntry {
 
 ## 🎯 결론
 
-BFF 패턴 도입을 통해 krgeobuk-infra 프로젝트는:
+### 현재 전략: krgeobuk 최적화 SRP 리팩토링 우선 추진
 
-1. **단일책임원칙 준수**: 도메인 서비스의 명확한 책임 분리
-2. **클라이언트 최적화**: 웹, 모바일, 서버별 특화된 API 제공
-3. **확장성 확보**: 새로운 클라이언트/도메인 추가 시 기존 서비스 영향 최소화
-4. **성능 향상**: 클라이언트별 캐싱 및 최적화 전략
-5. **운영 효율성**: 독립적 배포, 모니터링, 장애 처리
+krgeobuk-infra 프로젝트는 **krgeobuk 생태계 특성을 활용한 단계적 접근**을 통해 아키텍처를 개선합니다:
 
-이를 통해 현재의 MSA 아키텍처를 유지하면서도 클라이언트 다양화와 확장성 요구사항을 효과적으로 해결할 수 있습니다.
+#### Phase 1: krgeobuk 최적화 SRP 리팩토링 (현재 진행)
+1. **krgeobuk 생태계 완전 활용**: @krgeobuk/authz-commons 패키지로 재사용성 극대화
+2. **TCP 통신 최적화**: 전용 TCP 서비스 레이어 + 체계적 폴백 전략 + 배치 처리
+3. **점진적 마이그레이션**: API 호환성 100% 유지하면서 레이어별 단계적 적용
+4. **성능 중심 설계**: 지능형 캐싱 전략 + 병렬 처리 + 메모리 최적화
+5. **중간테이블 도메인 최적화**: krgeobuk 특성인 중간테이블 패턴 전용 최적화
+
+#### 핵심 개선점
+- **Facade 패턴**: RoleService → 4개 레이어 분리 (Data/TCP/Business/Aggregation)
+- **전략 패턴**: Cache/Fallback/Validation 전략으로 재사용성 확보
+- **공통 패키지**: TCP 클라이언트, 집계 로직, 폴백 전략 공통화
+- **배치 최적화**: 관련 데이터 병렬 수집 + Promise.allSettled 활용
+
+#### Phase 2: BFF 도입 (조건부)
+**다음 상황 발생 시 BFF 도입 고려:**
+- 모바일 앱 개발 확정
+- 외부 시스템 연동 3개 이상
+- 현재 구조로 성능 최적화 한계 도달
+- 웹 외 2개 이상 클라이언트 필요
+
+#### 기대 효과
+- **즉시**: SRP 준수 + krgeobuk 패키지 활용도 극대화
+- **중기**: TCP 최적화를 통한 MSA 통신 성능 향상
+- **장기**: BFF 도입 시 이미 최적화된 서비스 레이어 활용
+
+이 전략을 통해 **krgeobuk 생태계 특성에 최적화된** 아키텍처를 구축하면서 **미래 확장성**을 동시에 확보할 수 있습니다.
