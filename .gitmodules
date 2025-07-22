@@ -13,3 +13,6 @@
 [submodule "portal-client"]
 	path = portal-client
 	url = https://github.com/ryongmi/portal-client.git
+[submodule "my-pick-client"]
+	path = my-pick-client
+	url = https://github.com/ryongmi/my-pick-client.git
