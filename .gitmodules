@@ -16,3 +16,6 @@
 [submodule "my-pick-client"]
 	path = my-pick-client
 	url = https://github.com/ryongmi/my-pick-client.git
+[submodule "my-pick-server"]
+	path = my-pick-server
+	url = https://github.com/ryongmi/my-pick-server.git
