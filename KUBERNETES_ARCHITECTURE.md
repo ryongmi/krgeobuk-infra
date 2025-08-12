@@ -1,373 +1,903 @@
 # Kubernetes 아키텍처 설계
 
-이 문서는 krgeobuk-infra의 Docker Compose에서 Kubernetes로의 마이그레이션 계획을 설명합니다.
+이 문서는 krgeobuk-infra의 **영구 분리형 하이브리드 쿠버네티스 아키텍처** 설계를 설명합니다.
 
 ## 목차
 
-- [현재 상황 vs 목표 아키텍처](#현재-상황-vs-목표-아키텍처)
-- [Kubernetes 네트워크 아키텍처](#kubernetes-네트워크-아키텍처)
-- [서비스별 구성 변화](#서비스별-구성-변화)
-- [Docker 이미지 빌드 전략](#docker-이미지-빌드-전략)
-- [파일 구조 변화](#파일-구조-변화)
+- [아키텍처 개요](#아키텍처-개요)
+- [핵심 설계 철학](#핵심-설계-철학)
+- [네트워크 아키텍처](#네트워크-아키텍처)
+- [외부 데이터베이스 연결](#외부-데이터베이스-연결)
+- [서비스별 구성](#서비스별-구성)
 - [모니터링 아키텍처](#모니터링-아키텍처)
+- [디렉토리 구조](#디렉토리-구조)
 - [마이그레이션 계획](#마이그레이션-계획)
+- [백업 및 재해복구](#백업-및-재해복구)
 
-## 현재 상황 vs 목표 아키텍처
+## 아키텍처 개요
 
-### 현재 Docker Compose 구조
+### 영구 분리형 하이브리드 구조
+
 ```
-Gateway Nginx (최상단)
-├── auth-server nginx → auth-server:8000
-├── authz-server nginx → authz-server:8100  
-├── portal-client nginx → portal-client:3000
-└── portal-server nginx → portal-server:8200
-
-각 서비스별 독립적인 MySQL, Redis 인스턴스
+┌─────────────────────────────────────────────────────────────────┐
+│ 쿠버네티스 클러스터 (애플리케이션 + 모니터링)                  │
+├─────────────────────────────────────────────────────────────────┤
+│ Ingress Controller (nginx-ingress)                             │
+│ ├── auth.krgeobuk.com → auth-client + auth-server             │
+│ ├── portal.krgeobuk.com → portal-client                       │
+│ ├── api.krgeobuk.com → API Gateway                             │
+│ └── monitoring.krgeobuk.com → Grafana                          │
+├─────────────────────────────────────────────────────────────────┤
+│ Application Pods                                                │
+│ ├── auth-server (NestJS)                                       │
+│ ├── authz-server (NestJS)                                      │  
+│ ├── portal-client (nginx + static)                             │
+│ └── auth-client (nginx + static)                               │
+├─────────────────────────────────────────────────────────────────┤
+│ Monitoring Stack                                                │
+│ ├── Prometheus (메트릭 수집)                                   │
+│ ├── Grafana (대시보드)                                         │
+│ └── AlertManager (알림)                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓ (네트워크 연결)
+┌─────────────────────────────────────────────────────────────────┐
+│ 외부 데이터 서버 (영구 분리)                                   │
+├─────────────────────────────────────────────────────────────────┤
+│ 기존 Docker Compose 인프라 활용                                │
+│ ├── auth-mysql:3307, auth-redis:6380                          │
+│ ├── authz-mysql:3308, authz-redis:6381                        │
+│ ├── 백업 시스템 (cron + rsync)                                │
+│ └── 모니터링 에이전트 (node-exporter, mysql-exporter)         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 목표 Kubernetes 구조
-```
-Internet
-    ↓ (80, 443만 외부 노출)
-Ingress Controller (nginx-ingress)
-    ├── /api/auth → auth-server Service → auth-server Pods
-    ├── /api/authz → authz-server Service → authz-server Pods
-    ├── /api/portal → portal-server Service → portal-server Pods
-    ├── / → portal-client Service → portal-client Pods
-    ├── /grafana → grafana Service → grafana Pods
-    └── /prometheus → prometheus Service → prometheus Pods (선택적)
+## 핵심 설계 철학
 
-Cluster 내부 (외부 접근 불가):
-├── MySQL Services & Pods (각 서비스별)
-├── Redis Services & Pods (각 서비스별)
-└── Monitoring Stack
-```
+### 1. 데이터 안정성 극대화
+- DB/Redis가 쿠버네티스 라이프사이클과 독립적
+- 전통적인 DB 관리 도구 및 절차 그대로 활용
+- 백업/복구 절차 단순화
 
-## Kubernetes 네트워크 아키텍처
+### 2. 운영 복잡도 최소화
+- 애플리케이션 스케일링과 데이터 관리 분리
+- DB 성능 튜닝 및 유지보수 독립적 수행
+- 장애 영향 범위 최소화
 
-### 네트워크 보안 모델
-- **외부 노출**: Ingress Controller만 80, 443 포트 노출
-- **내부 통신**: 모든 서비스는 ClusterIP로 클러스터 내부에서만 접근
-- **Zero Trust**: Pod 간 통신은 네트워크 정책으로 제어
+### 3. 기존 인프라 활용
+- 검증된 Docker Compose 설정 100% 재사용
+- 기존 포트 체계 및 네트워크 구조 유지
+- 점진적 마이그레이션으로 위험 최소화
 
-### 도메인 및 라우팅
+## 네트워크 아키텍처
+
+### 도메인 기반 라우팅
+
 ```yaml
-# krgeobuk.com 기반 단일 도메인 구조
-krgeobuk.com/api/auth/*     → auth-server
-krgeobuk.com/api/authz/*    → authz-server  
-krgeobuk.com/api/portal/*   → portal-server
-krgeobuk.com/*              → portal-client (SPA)
-krgeobuk.com/grafana/*      → grafana (모니터링)
+# 서브도메인 분리 구조
+auth.krgeobuk.com        → auth-client (/) + auth-server (/api)
+portal.krgeobuk.com      → portal-client (/) + portal-server (/api)
+monitoring.krgeobuk.com  → Grafana 대시보드
+api.krgeobuk.com         → API Gateway (통합 API 엔드포인트)
 ```
 
-### Ingress 설정 예시
+### Ingress 설정
+
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: krgeobuk-gateway
+  namespace: krgeobuk
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
+  tls:
+  - hosts:
+    - auth.krgeobuk.com
+    - portal.krgeobuk.com
+    - monitoring.krgeobuk.com
+    secretName: krgeobuk-tls
   rules:
-  - host: krgeobuk.com
+  # 인증 서비스
+  - host: auth.krgeobuk.com
     http:
       paths:
-      # API 엔드포인트들 (높은 우선순위)
-      - path: /api/auth
+      - path: /api
         pathType: Prefix
         backend:
           service:
             name: auth-server
-            port:
-              number: 80
-      - path: /api/authz
+            port: { number: 80 }
+      - path: /
         pathType: Prefix
         backend:
           service:
-            name: authz-server
-            port:
-              number: 80
-      - path: /api/portal
+            name: auth-client
+            port: { number: 80 }
+  
+  # 포털 서비스
+  - host: portal.krgeobuk.com
+    http:
+      paths:
+      - path: /api
         pathType: Prefix
         backend:
           service:
             name: portal-server
-            port:
-              number: 80
-      # 프론트엔드 (낮은 우선순위, 모든 나머지 경로)
+            port: { number: 80 }
       - path: /
         pathType: Prefix
         backend:
           service:
             name: portal-client
-            port:
-              number: 80
+            port: { number: 80 }
+  
+  # 모니터링
+  - host: monitoring.krgeobuk.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port: { number: 80 }
 ```
 
-## 서비스별 구성 변화
+### 네트워크 보안
 
-### 백엔드 서비스 (auth-server, authz-server, portal-server)
-
-**변화 내용:**
-- ✅ **Dockerfile**: 유지 (로컬 개발 + CI/CD용)
-- ❌ **개별 nginx**: 제거 (Kubernetes Service로 대체)
-- ❌ **docker-compose.prod.yaml**: 제거
-- ✅ **docker-compose.yaml**: 로컬 개발용으로 유지
-
-**Dockerfile 멀티스테이지 구조:**
-```dockerfile
-FROM node:23-alpine AS deps
-FROM node:23-alpine AS build  
-FROM node:23-alpine AS local      # 로컬 개발용
-FROM node:23-alpine AS development # CI/CD 테스트용
-FROM node:23-alpine AS production  # Kubernetes 운영용
-```
-
-**Service 설정:**
 ```yaml
+# 외부 DB 접근 제어
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-access-policy
+  namespace: krgeobuk
+spec:
+  podSelector:
+    matchLabels:
+      database-access: "true"
+  policyTypes:
+  - Egress
+  egress:
+  - to: []  # 외부 DB 서버
+    ports:
+    - protocol: TCP
+      port: 3307  # auth-mysql
+    - protocol: TCP
+      port: 3308  # authz-mysql
+    - protocol: TCP
+      port: 6380  # auth-redis
+    - protocol: TCP
+      port: 6381  # authz-redis
+```
+
+## 외부 데이터베이스 연결
+
+### External Service 패턴
+
+```yaml
+# auth-server 외부 MySQL 연결
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-mysql
+  namespace: krgeobuk
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3306
+    targetPort: 3307
+    protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: auth-mysql
+  namespace: krgeobuk
+subsets:
+- addresses:
+  - ip: "192.168.1.100"  # 외부 DB 서버 IP
+  ports:
+  - port: 3307
+    protocol: TCP
+---
+# auth-server 외부 Redis 연결
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-redis
+  namespace: krgeobuk
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6380
+    protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: auth-redis
+  namespace: krgeobuk
+subsets:
+- addresses:
+  - ip: "192.168.1.100"  # 외부 Redis 서버 IP
+  ports:
+  - port: 6380
+    protocol: TCP
+```
+
+### 환경 변수 관리
+
+```yaml
+# ConfigMap + Secret 조합
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-server-config
+  namespace: krgeobuk
+data:
+  MYSQL_HOST: "auth-mysql"
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: "auth"
+  REDIS_HOST: "auth-redis"
+  REDIS_PORT: "6379"
+  NODE_ENV: "production"
+  # DB 연결 풀 최적화
+  DB_CONNECTION_POOL_MIN: "5"
+  DB_CONNECTION_POOL_MAX: "20"
+  DB_CONNECTION_TIMEOUT: "30000"
+  DB_IDLE_TIMEOUT: "600000"
+  # Redis 연결 최적화
+  REDIS_CONNECTION_POOL_SIZE: "10"
+  REDIS_CONNECTION_TIMEOUT: "5000"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-server-secrets
+  namespace: krgeobuk
+type: Opaque
+stringData:
+  MYSQL_PASSWORD: "your-secure-password"
+  REDIS_PASSWORD: "your-redis-password"
+  JWT_ACCESS_PRIVATE_KEY: |
+    -----BEGIN RSA PRIVATE KEY-----
+    ...
+    -----END RSA PRIVATE KEY-----
+  JWT_REFRESH_PRIVATE_KEY: |
+    -----BEGIN RSA PRIVATE KEY-----
+    ...
+    -----END RSA PRIVATE KEY-----
+```
+
+## 서비스별 구성
+
+### 백엔드 서비스 (auth-server, authz-server)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-server
+  namespace: krgeobuk
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-server
+  template:
+    metadata:
+      labels:
+        app: auth-server
+        database-access: "true"  # NetworkPolicy 라벨
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # 외부 DB 연결 대기
+      initContainers:
+      - name: wait-for-database
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for database connections..."
+          until nc -z auth-mysql 3306 && nc -z auth-redis 6379; do
+            echo "Database not ready, waiting..."
+            sleep 2
+          done
+          echo "Database connections successful!"
+      
+      containers:
+      - name: auth-server
+        image: krgeobuk/auth-server:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8010
+          name: tcp
+        
+        # 환경 변수
+        envFrom:
+        - configMapRef:
+            name: auth-server-config
+        - secretRef:
+            name: auth-server-secrets
+        
+        # 헬스체크
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        
+        # 리소스 제한
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
 apiVersion: v1
 kind: Service
 metadata:
   name: auth-server
+  namespace: krgeobuk
 spec:
-  type: ClusterIP  # 클러스터 내부에서만 접근
+  type: ClusterIP
   selector:
     app: auth-server
   ports:
-  - port: 80
+  - name: http
+    port: 80
     targetPort: 8000
+  - name: tcp
+    port: 8010
+    targetPort: 8010
 ```
 
-### 프론트엔드 서비스 (portal-client)
-
-**nginx 역할 변화:**
-- **기존**: 복잡한 프록시 설정 + 정적 파일 서빙
-- **변경**: 단순한 정적 파일 서빙만
-
-**간소화된 nginx.conf:**
-```nginx
-server {
-    listen 80;
-    root /usr/share/nginx/html;
-    index index.html;
-    
-    # SPA 라우팅 지원 (핵심 기능)
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    
-    # 정적 파일 캐싱
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-    
-    gzip on;
-    gzip_types text/css application/javascript application/json;
-}
-```
-
-### 데이터베이스 및 인프라 서비스
-
-**MySQL, Redis 구성:**
-- Dockerfile 불필요 (공식 이미지 사용)
-- 각 서비스별 독립적인 인스턴스 유지
-- PersistentVolume으로 데이터 영속성 보장
+### 프론트엔드 서비스 (portal-client, auth-client)
 
 ```yaml
-# MySQL 예시
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-mysql
+  name: portal-client
+  namespace: krgeobuk
 spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: portal-client
   template:
+    metadata:
+      labels:
+        app: portal-client
     spec:
       containers:
-      - name: mysql
-        image: mysql:8.0
-        env:
-        - name: MYSQL_DATABASE
-          value: auth
+      - name: portal-client
+        image: krgeobuk/portal-client:latest
+        ports:
+        - containerPort: 80
+        
+        # nginx 설정
         volumeMounts:
-        - name: mysql-data
-          mountPath: /var/lib/mysql
-```
-
-## Docker 이미지 빌드 전략
-
-### 현재 방식 (Docker Compose)
-```bash
-# 매번 로컬에서 빌드
-docker-compose -f docker-compose.prod.yaml up --build
-```
-
-### 새로운 방식 (CI/CD + Kubernetes)
-```bash
-# CI/CD 파이프라인에서 한 번 빌드
-docker build --target production -t krgeobuk/auth-server:v1.0.0 .
-docker push registry/krgeobuk/auth-server:v1.0.0
-
-# Kubernetes에서 빌드된 이미지 사용
-kubectl apply -f k8s/auth-server-deployment.yml
-```
-
-### 장점
-1. **성능**: 배포 시 빌드 과정 없음
-2. **일관성**: 동일한 이미지를 모든 환경에서 사용
-3. **롤백**: 이전 버전으로 즉시 롤백 가능
-4. **확장성**: 멀티 인스턴스 배포 시 이미지 재사용
-
-## 파일 구조 변화
-
-### 현재 구조
-```
-krgeobuk-infra/
-├── auth-server/
-│   ├── docker-compose.yaml
-│   ├── docker-compose.prod.yaml  # 제거 예정
-│   └── nginx/                    # 제거 예정
-├── authz-server/
-│   ├── docker-compose.yaml  
-│   ├── docker-compose.prod.yaml  # 제거 예정
-│   └── nginx/                    # 제거 예정
-└── portal-client/
-    ├── docker-compose.yaml
-    ├── docker-compose.prod.yaml  # 제거 예정
-    └── nginx.conf                # 간소화
-```
-
-### 목표 구조
-```
-krgeobuk-infra/
-├── k8s/                          # 새로 생성
-│   ├── auth-server/
-│   │   ├── deployment.yml
-│   │   ├── service.yml
-│   │   ├── mysql-deployment.yml
-│   │   └── redis-deployment.yml
-│   ├── authz-server/
-│   ├── portal-client/
-│   ├── portal-server/
-│   ├── ingress.yml
-│   └── monitoring/
-│       ├── prometheus.yml
-│       └── grafana.yml
-├── auth-server/
-│   ├── Dockerfile                # 유지
-│   ├── docker-compose.yaml       # 로컬용으로 유지
-│   └── envs/
-├── authz-server/
-├── portal-client/
-│   ├── Dockerfile                # 유지  
-│   ├── docker-compose.yaml       # 로컬용으로 유지
-│   └── nginx.conf                # 간소화
-└── shared-lib/
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+      
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: krgeobuk
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+        
+        server {
+            listen 80;
+            root /usr/share/nginx/html;
+            index index.html;
+            
+            # SPA 라우팅 지원
+            location / {
+                try_files $uri $uri/ /index.html;
+            }
+            
+            # 정적 파일 캐싱
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            # gzip 압축
+            gzip on;
+            gzip_types text/css application/javascript application/json;
+        }
+    }
 ```
 
 ## 모니터링 아키텍처
 
-### Prometheus + Grafana 스택
+### Prometheus 설정
 
-**구성 요소:**
-- **Prometheus**: 메트릭 수집 및 저장
-- **Grafana**: 시각화 대시보드
-- **AlertManager**: 알림 관리
-- **Node Exporter**: 노드 메트릭 수집
-
-**배포 방법:**
-```bash
-# Helm Chart 사용 (권장)
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm install monitoring prometheus-community/kube-prometheus-stack
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    scrape_configs:
+    # 쿠버네티스 애플리케이션 메트릭
+    - job_name: 'kubernetes-pods'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['krgeobuk']
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+    
+    # 외부 DB 서버 메트릭 (영구 분리)
+    - job_name: 'external-databases'
+      static_configs:
+      - targets:
+        - '192.168.1.100:9104'  # MySQL Exporter
+        - '192.168.1.100:9121'  # Redis Exporter
+        labels:
+          service: 'database-infrastructure'
+    
+    # 외부 서버 시스템 메트릭
+    - job_name: 'external-system'
+      static_configs:
+      - targets:
+        - '192.168.1.100:9100'  # Node Exporter
+        labels:
+          service: 'database-server'
+    
+    # Kubernetes 클러스터 메트릭
+    - job_name: 'kubernetes-nodes'
+      kubernetes_sd_configs:
+      - role: node
+    
+    - job_name: 'kubernetes-services'
+      kubernetes_sd_configs:
+      - role: service
 ```
 
-**모니터링 대상:**
-1. **인프라 메트릭**: CPU, 메모리, 디스크, 네트워크
-2. **Kubernetes 메트릭**: Pod, Service, Ingress 상태
-3. **애플리케이션 메트릭**: API 응답시간, 에러율, 처리량
-4. **데이터베이스 메트릭**: 연결 수, 쿼리 성능
+### Grafana 대시보드
 
-**접근 경로:**
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+data:
+  krgeobuk-overview.json: |
+    {
+      "dashboard": {
+        "title": "krgeobuk 전체 시스템 개요",
+        "panels": [
+          {
+            "title": "애플리케이션 상태",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "up{job=~'kubernetes-pods'}"
+              }
+            ]
+          },
+          {
+            "title": "외부 데이터베이스 상태",
+            "type": "stat", 
+            "targets": [
+              {
+                "expr": "up{job='external-databases'}"
+              }
+            ]
+          },
+          {
+            "title": "API 응답시간",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))"
+              }
+            ]
+          }
+        ]
+      }
+    }
 ```
-krgeobuk.com/grafana     → Grafana 대시보드
-krgeobuk.com/prometheus  → Prometheus (선택적, 디버그용)
+
+## 디렉토리 구조
+
 ```
-
-### 애플리케이션 메트릭 설정
-
-**NestJS 서버에 메트릭 엔드포인트 추가:**
-```typescript
-// 공통: @krgeobuk/core 패키지에 추가 예정
-@Controller('metrics')
-export class MetricsController {
-  @Get()
-  async getMetrics(): Promise<string> {
-    return register.metrics();
-  }
-}
+krgeobuk-infra/
+├── k8s/                              # 쿠버네티스 매니페스트
+│   ├── base/
+│   │   ├── namespace.yaml
+│   │   ├── networkpolicy.yaml
+│   │   └── external-services.yaml    # 외부 DB 연결 정의
+│   ├── applications/
+│   │   ├── auth-server/
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   ├── configmap.yaml
+│   │   │   └── secrets.yaml.template
+│   │   ├── authz-server/
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   ├── configmap.yaml
+│   │   │   └── secrets.yaml.template
+│   │   ├── portal-client/
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   └── nginx-config.yaml
+│   │   └── auth-client/
+│   │       ├── deployment.yaml
+│   │       ├── service.yaml
+│   │       └── nginx-config.yaml
+│   ├── monitoring/
+│   │   ├── namespace.yaml
+│   │   ├── prometheus/
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   ├── configmap.yaml
+│   │   │   └── rbac.yaml
+│   │   ├── grafana/
+│   │   │   ├── deployment.yaml
+│   │   │   ├── service.yaml
+│   │   │   ├── configmap.yaml
+│   │   │   └── dashboards.yaml
+│   │   └── alertmanager/
+│   │       ├── deployment.yaml
+│   │       ├── service.yaml
+│   │       └── configmap.yaml
+│   ├── ingress/
+│   │   └── gateway.yaml
+│   └── environments/
+│       ├── development/
+│       │   ├── kustomization.yaml
+│       │   └── patches/
+│       ├── staging/
+│       │   ├── kustomization.yaml
+│       │   └── patches/
+│       └── production/
+│           ├── kustomization.yaml
+│           └── patches/
+├── infrastructure/                   # 외부 DB/Redis (영구 유지)
+│   ├── auth-infrastructure.yaml      # auth-server DB/Redis
+│   ├── authz-infrastructure.yaml     # authz-server DB/Redis
+│   ├── monitoring-agents.yaml        # 외부 서버 모니터링
+│   ├── backup/
+│   │   ├── mysql-backup.sh
+│   │   ├── redis-backup.sh
+│   │   ├── backup-schedule.cron
+│   │   └── restore-procedures.md
+│   ├── maintenance/
+│   │   ├── db-maintenance.sh
+│   │   ├── health-check.sh
+│   │   └── performance-tuning.md
+│   └── security/
+│       ├── firewall-rules.sh
+│       └── ssl-certificates.md
+├── deployment/
+│   ├── jenkins/
+│   │   ├── Jenkinsfile.applications   # 애플리케이션 배포
+│   │   ├── Jenkinsfile.monitoring     # 모니터링 배포
+│   │   └── pipeline-config/
+│   ├── scripts/
+│   │   ├── deploy-applications.sh
+│   │   ├── deploy-monitoring.sh
+│   │   ├── setup-external-db.sh
+│   │   ├── health-check-full.sh
+│   │   └── rollback.sh
+│   ├── helm/                         # Helm Charts
+│   │   ├── krgeobuk-apps/
+│   │   │   ├── Chart.yaml
+│   │   │   ├── values.yaml
+│   │   │   └── templates/
+│   │   └── monitoring-stack/
+│   │       ├── Chart.yaml
+│   │       ├── values.yaml
+│   │       └── templates/
+│   └── docker/
+│       ├── build-all.sh
+│       └── registry-setup.sh
+└── docs/
+    ├── DEPLOYMENT_GUIDE.md          # 배포 가이드
+    ├── EXTERNAL_DB_SETUP.md         # 외부 DB 설정 가이드
+    ├── MONITORING_SETUP.md          # 모니터링 설정 가이드
+    ├── BACKUP_RECOVERY.md            # 백업/복구 절차
+    ├── TROUBLESHOOTING.md            # 문제 해결 가이드
+    └── SECURITY_BEST_PRACTICES.md   # 보안 모범 사례
 ```
 
 ## 마이그레이션 계획
 
-### Phase 1: 준비 단계 (2주)
-1. **Kubernetes 매니페스트 작성**
-   - 각 서비스별 Deployment, Service 파일
-   - Ingress 설정
+### Phase 1: 애플리케이션 쿠버네티스 이전 (2-3주)
+
+#### 1주차: 인프라 준비
+1. **쿠버네티스 클러스터 구축**
+   - 노드 구성 및 네트워크 설정
+   - Ingress Controller 설치
+   - cert-manager 설치 (SSL 인증서 자동 관리)
+
+2. **외부 DB 연결 설정**
+   - External Service 및 Endpoints 구성
+   - 네트워크 보안 정책 설정
+   - 연결 테스트 및 검증
+
+3. **Docker 이미지 빌드 및 Registry 설정**
+   - 각 서비스별 프로덕션 이미지 빌드
+   - Container Registry 구성
+   - 이미지 푸시 및 검증
+
+#### 2주차: 서비스 배포
+1. **백엔드 서비스 배포**
+   - auth-server, authz-server 순차 배포
    - ConfigMap, Secret 설정
+   - 헬스체크 및 로드밸런싱 확인
 
-2. **CI/CD 파이프라인 구축**  
-   - Docker 이미지 자동 빌드
-   - Container Registry 설정
-   - Kubernetes 배포 파이프라인
+2. **프론트엔드 서비스 배포**
+   - portal-client, auth-client 배포
+   - nginx 설정 최적화
+   - 정적 파일 서빙 테스트
 
-3. **로컬 테스트 환경 구축**
-   - minikube 또는 kind를 이용한 로컬 클러스터
-   - 전체 스택 테스트
+3. **Ingress 및 도메인 설정**
+   - 도메인별 라우팅 구성
+   - SSL 인증서 설정
+   - DNS 설정 및 검증
 
-### Phase 2: 개발환경 적용 (1주)
-1. **개발 클러스터 구축**
-2. **서비스별 순차 배포**
-   - shared-lib → auth-server → authz-server → portal-client
-3. **통합 테스트 및 디버깅**
+#### 3주차: 통합 테스트 및 최적화
+1. **통합 테스트**
+   - 전체 시스템 기능 테스트
+   - 성능 테스트 및 튜닝
+   - 장애 시나리오 테스트
 
-### Phase 3: 모니터링 구축 (1주)  
+2. **모니터링 기본 설정**
+   - 애플리케이션 메트릭 수집
+   - 기본 알림 설정
+   - 로그 수집 및 분석
+
+3. **운영 절차 수립**
+   - 배포 절차 문서화
+   - 장애 대응 절차 수립
+   - 백업 검증
+
+### Phase 2: 모니터링 통합 (3-4개월 후)
+
+#### 1단계: 모니터링 스택 구축
 1. **Prometheus + Grafana 배포**
-2. **애플리케이션 메트릭 설정**
-3. **알림 설정 및 대시보드 구성**
+   - Helm Chart를 이용한 모니터링 스택 설치
+   - 외부 DB 메트릭 수집 설정
+   - 대시보드 구성
 
-### Phase 4: 운영환경 적용 (1주)
-1. **프로덕션 클러스터 구축**
-2. **데이터 마이그레이션**
-3. **DNS 및 도메인 설정**
-4. **무중단 배포 테스트**
+2. **통합 모니터링 설정**
+   - 애플리케이션 + 인프라 통합 대시보드
+   - 알림 규칙 설정
+   - 로그 집계 시스템 구축
 
-### Phase 5: 최적화 (지속적)
-1. **성능 모니터링 및 튜닝**
-2. **보안 강화 (네트워크 정책, RBAC)**
-3. **백업 및 재해복구 계획**
+#### 2단계: 고도화
+1. **관찰 가능성 강화**
+   - 분산 추적 시스템 도입
+   - 고급 메트릭 분석
+   - 예측 모니터링
 
-## 기대 효과
+2. **자동화 개선**
+   - 자동 스케일링 설정
+   - 자동 복구 시스템
+   - 지능형 알림 시스템
 
-### 리소스 효율성
-- **nginx 컨테이너 3개 제거**: 백엔드 서비스별 nginx 불필요
-- **중앙집중식 라우팅**: Ingress Controller 1개로 모든 트래픽 처리
-- **자동 스케일링**: HPA(Horizontal Pod Autoscaler) 적용 가능
+## 백업 및 재해복구
 
-### 운영 효율성
-- **무중단 배포**: Rolling Update 지원
-- **자동 복구**: Pod 장애 시 자동 재시작
-- **일관된 환경**: 개발/스테이징/운영 환경 일치
+### 외부 DB 백업 시스템
 
-### 보안 강화
-- **네트워크 격리**: Pod 간 통신 제어
-- **최소 권한**: RBAC을 통한 세밀한 권한 관리
-- **외부 노출 최소화**: 80, 443 포트만 외부 노출
+```bash
+#!/bin/bash
+# infrastructure/backup/mysql-backup.sh
 
-### 확장성
-- **마이크로서비스 추가**: 새 서비스 배포 용이
-- **글로벌 배포**: 멀티 리전 클러스터 구성 가능
-- **서비스 메시**: Istio 등 추가 도구 적용 가능
+# 환경 변수 설정
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backup/mysql"
+RETENTION_DAYS=7
+
+# 백업 디렉토리 생성
+mkdir -p ${BACKUP_DIR}
+
+# auth 데이터베이스 백업
+echo "Starting auth database backup..."
+docker exec auth-mysql mysqldump \
+  -u root -p${MYSQL_ROOT_PASSWORD} \
+  --single-transaction \
+  --routines \
+  --triggers \
+  --set-gtid-purged=OFF \
+  auth > ${BACKUP_DIR}/auth_${DATE}.sql
+
+if [ $? -eq 0 ]; then
+  echo "Auth database backup completed: auth_${DATE}.sql"
+else
+  echo "Auth database backup failed!"
+  exit 1
+fi
+
+# authz 데이터베이스 백업
+echo "Starting authz database backup..."
+docker exec authz-mysql mysqldump \
+  -u root -p${MYSQL_ROOT_PASSWORD} \
+  --single-transaction \
+  --routines \
+  --triggers \
+  --set-gtid-purged=OFF \
+  authz > ${BACKUP_DIR}/authz_${DATE}.sql
+
+if [ $? -eq 0 ]; then
+  echo "Authz database backup completed: authz_${DATE}.sql"
+else
+  echo "Authz database backup failed!"
+  exit 1
+fi
+
+# 압축
+gzip ${BACKUP_DIR}/auth_${DATE}.sql
+gzip ${BACKUP_DIR}/authz_${DATE}.sql
+
+# 오래된 백업 파일 삭제
+find ${BACKUP_DIR} -name "*.sql.gz" -mtime +${RETENTION_DAYS} -delete
+
+# 백업 상태 알림
+echo "Backup completed successfully: ${DATE}"
+echo "Available backups:"
+ls -la ${BACKUP_DIR}/*.sql.gz | tail -5
+```
+
+### Redis 백업 시스템
+
+```bash
+#!/bin/bash
+# infrastructure/backup/redis-backup.sh
+
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backup/redis"
+RETENTION_DAYS=7
+
+mkdir -p ${BACKUP_DIR}
+
+# Redis auth 백업
+docker exec auth-redis redis-cli --rdb /data/dump_auth_${DATE}.rdb
+docker cp auth-redis:/data/dump_auth_${DATE}.rdb ${BACKUP_DIR}/
+
+# Redis authz 백업
+docker exec authz-redis redis-cli --rdb /data/dump_authz_${DATE}.rdb
+docker cp authz-redis:/data/dump_authz_${DATE}.rdb ${BACKUP_DIR}/
+
+# 압축 및 정리
+gzip ${BACKUP_DIR}/dump_auth_${DATE}.rdb
+gzip ${BACKUP_DIR}/dump_authz_${DATE}.rdb
+
+# 오래된 백업 삭제
+find ${BACKUP_DIR} -name "*.rdb.gz" -mtime +${RETENTION_DAYS} -delete
+
+echo "Redis backup completed: ${DATE}"
+```
+
+### 복구 절차
+
+```bash
+#!/bin/bash
+# infrastructure/backup/restore-mysql.sh
+
+BACKUP_FILE=$1
+TARGET_DB=$2
+
+if [ -z "$BACKUP_FILE" ] || [ -z "$TARGET_DB" ]; then
+  echo "Usage: $0 <backup_file> <target_database>"
+  echo "Example: $0 auth_20241201_120000.sql.gz auth"
+  exit 1
+fi
+
+# 백업 파일 압축 해제
+if [[ $BACKUP_FILE == *.gz ]]; then
+  gunzip -c $BACKUP_FILE > temp_restore.sql
+  RESTORE_FILE="temp_restore.sql"
+else
+  RESTORE_FILE=$BACKUP_FILE
+fi
+
+# 데이터베이스 복구
+if [ "$TARGET_DB" == "auth" ]; then
+  CONTAINER="auth-mysql"
+elif [ "$TARGET_DB" == "authz" ]; then
+  CONTAINER="authz-mysql"
+else
+  echo "Invalid target database: $TARGET_DB"
+  exit 1
+fi
+
+echo "Restoring $TARGET_DB database from $BACKUP_FILE..."
+docker exec -i $CONTAINER mysql -u root -p${MYSQL_ROOT_PASSWORD} $TARGET_DB < $RESTORE_FILE
+
+if [ $? -eq 0 ]; then
+  echo "Database restore completed successfully!"
+else
+  echo "Database restore failed!"
+  exit 1
+fi
+
+# 임시 파일 정리
+rm -f temp_restore.sql
+```
+
+## 장점 및 특징
+
+### 1. 데이터 안정성 극대화
+- **독립적 라이프사이클**: DB/Redis가 쿠버네티스와 독립적으로 관리
+- **검증된 백업 시스템**: 전통적인 DB 백업 도구 활용
+- **장애 격리**: 애플리케이션 장애가 데이터에 영향 없음
+
+### 2. 운영 복잡도 최소화
+- **기존 인프라 재사용**: Docker Compose 설정 100% 활용
+- **분리된 관리**: 애플리케이션 스케일링과 DB 관리 독립
+- **점진적 도입**: 위험 최소화된 단계별 마이그레이션
+
+### 3. 비용 효율성
+- **리소스 최적화**: DB 서버 전용 최적화 가능
+- **스토리지 절약**: 쿠버네티스 스토리지 비용 절감
+- **인프라 투자 보호**: 기존 투자 100% 활용
+
+### 4. 확장성 및 유연성
+- **서비스별 독립 스케일링**: 애플리케이션 레이어 유연한 확장
+- **기술 스택 다양성**: 서비스별 최적 기술 선택 가능
+- **미래 확장 대비**: 필요시 데이터 레이어도 k8s로 이전 가능
 
 ---
 
-**다음 단계**: Phase 1부터 순차적으로 진행하며, 각 단계별 완료 후 다음 단계로 이동하는 것을 권장합니다.
+**다음 단계**: Phase 1 준비 작업부터 시작하여 단계별로 진행하며, 각 단계 완료 후 충분한 검증을 거쳐 다음 단계로 진행합니다.
