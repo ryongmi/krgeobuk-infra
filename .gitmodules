@@ -25,3 +25,6 @@
 [submodule "portal-admin-client"]
 	path = portal-admin-client
 	url = https://github.com/ryongmi/portal-admin-client.git
+[submodule "my-pick-admin-client"]
+	path = my-pick-admin-client
+	url = https://github.com/ryongmi/my-pick-admin-client.git
