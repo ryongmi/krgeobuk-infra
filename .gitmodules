@@ -28,3 +28,12 @@
 [submodule "my-pick-admin-client"]
 	path = my-pick-admin-client
 	url = https://github.com/ryongmi/my-pick-admin-client.git
+[submodule "krgeobuk-deployment"]
+	path = krgeobuk-deployment
+	url = https://github.com/ryongmi/krgeobuk-deployment.git
+[submodule "krgeobuk-infrastructure"]
+	path = krgeobuk-infrastructure
+	url = https://github.com/ryongmi/krgeobuk-infrastructure.git
+[submodule "krgeobuk-k8s"]
+	path = krgeobuk-k8s
+	url = https://github.com/ryongmi/krgeobuk-k8s.git
