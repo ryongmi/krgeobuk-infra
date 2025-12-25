@@ -137,9 +137,16 @@ krgeobuk-k8s/
 │       ├── nginx-configmap.yaml
 │       └── kustomization.yaml
 │
-├── ingress/                        # Ingress 설정
-│   ├── ingress.yaml               # 공통 Ingress 규칙
-│   └── kustomization.yaml
+├── cluster-addons/                 # 클러스터 수준 애드온
+│   ├── cert-manager/              # TLS 인증서 관리
+│   │   ├── namespace.yaml
+│   │   ├── cluster-issuer-staging.yaml
+│   │   ├── cluster-issuer-prod.yaml
+│   │   └── kustomization.yaml
+│   │
+│   └── ingress-nginx/             # Ingress Controller
+│       ├── namespace.yaml
+│       └── kustomization.yaml
 │
 ├── environments/                   # 환경별 설정 (차이만)
 │   ├── dev/
@@ -163,6 +170,12 @@ krgeobuk-k8s/
 │       └── configmaps/
 │           ├── auth-server-env.yaml    # LOG_LEVEL=info
 │           └── authz-server-env.yaml
+│
+├── scripts/                        # 운영 스크립트
+│   ├── deploy.sh                  # 배포 스크립트
+│   ├── rollback.sh                # 롤백 스크립트
+│   ├── health-check.sh            # 헬스체크
+│   └── logs.sh                    # 로그 수집
 │
 └── docs/
     ├── DEPLOYMENT.md              # 배포 가이드
