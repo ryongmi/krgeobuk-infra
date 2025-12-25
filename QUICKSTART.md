@@ -411,8 +411,8 @@ npm config get registry
 - **[shared-lib/CLAUDE.md](./shared-lib/CLAUDE.md)** - 공유 라이브러리 개발 가이드
 
 ### 운영 가이드
-- **[scripts/DEPLOYMENT.md](./scripts/DEPLOYMENT.md)** - 배포 전략 및 환경 설정
-- **[docs/README.md](./docs/README.md)** - 상세 아키텍처 문서
+- **[krgeobuk-k8s/docs/DEPLOYMENT.md](./krgeobuk-k8s/docs/DEPLOYMENT.md)** - 배포 전략 및 환경 설정
+- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - 상세 아키텍처 문서
 
 ### 개발 워크플로우
 
