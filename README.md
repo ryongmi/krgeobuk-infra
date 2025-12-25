@@ -192,7 +192,7 @@ pnpm verdaccio:publish
 
 - [빠른 시작 가이드](./QUICKSTART.md) - 상세한 설치 및 실행 가이드
 - [배포 가이드](./krgeobuk-k8s/docs/DEPLOYMENT.md) - 환경별 배포 전략
-- [아키텍처 문서](./docs/README.md) - 시스템 아키텍처 상세 설명
+- [아키텍처 문서](./docs/ARCHITECTURE.md) - 시스템 아키텍처 상세 설명
 - [Claude 개발 가이드](./CLAUDE.md) - AI 어시스턴트용 개발 표준
 
 ### 서비스별 가이드
