@@ -1,239 +1,217 @@
 # krgeobuk-infra
 
-> Git 서브모듈 기반 마이크로서비스 생태계
+Git 서브모듈로 관리하는 마이크로서비스 생태계입니다.
+인증·권한·포털·My Pick 서비스와 공유 라이브러리, 인프라 리포지토리로 구성되어 있으며 각 서비스는 독립적으로 개발 및 배포됩니다.
 
-krgeobuk-infra는 인증, 권한 관리, 포털 서비스로 구성된 엔터프라이즈급 마이크로서비스 아키텍처입니다. 각 서비스는 독립적으로 개발 및 배포되며, 공유 라이브러리를 통해 일관된 코드 품질과 아키텍처를 유지합니다.
+---
 
-## 주요 특징
+## 리포지토리 구조
 
-- **마이크로서비스 아키텍처**: 독립적인 서비스 개발 및 배포
-- **Git 서브모듈 관리**: 각 서비스별 독립 리포지토리
-- **공유 라이브러리**: 모노레포 기반 코드 재사용
-- **프라이빗 NPM 레지스트리**: Verdaccio를 통한 패키지 관리
-- **컨테이너화**: Docker 기반 개발 및 배포 환경
-- **타입 안정성**: 완전한 TypeScript 구현
+```
+krgeobuk-infra/
+├── auth-server/              # 인증 서비스 (OAuth, JWT)
+├── authz-server/             # 권한 관리 서비스 (RBAC)
+├── auth-client/              # 인증 UI 클라이언트
+├── portal-server/            # 포털 백엔드 서비스
+├── portal-client/            # 포털 사용자 클라이언트
+├── portal-admin-client/      # 포털 관리자 클라이언트
+├── my-pick-server/           # My Pick 백엔드 서비스
+├── my-pick-client/           # My Pick 사용자 클라이언트
+├── my-pick-admin-client/     # My Pick 관리자 클라이언트
+├── shared-lib/               # 공유 라이브러리 모노레포 (23개 @krgeobuk/* 패키지)
+├── krgeobuk-deployment/      # CI/CD 파이프라인, Jenkins·Verdaccio K8s 배포
+├── krgeobuk-infrastructure/  # Docker Compose 로컬 인프라 (MySQL, Redis)
+├── krgeobuk-k8s/             # Kubernetes 매니페스트 (Kustomize)
+├── docs/                     # 아키텍처·가이드 문서
+├── CLAUDE.md
+└── README.md
+```
 
-## 아키텍처 구조
+---
 
-### 핵심 서비스
+## 서브모듈 목록
 
-| 서비스 | 설명 | 포트 | 기술 스택 |
-|--------|------|------|-----------|
-| **auth-server** | 인증 서비스 (OAuth, JWT) | 8000 | NestJS, MySQL 8, Redis |
-| **authz-server** | 권한 관리 서비스 (RBAC) | 8100 | NestJS, MySQL 8, Redis |
-| **portal-client** | 통합 포털 클라이언트 | 3000 | Next.js 15, Tailwind CSS |
-| **shared-lib** | 공유 라이브러리 모노레포 | - | pnpm workspace |
+### 애플리케이션 서비스
 
-### 네트워크 구성
+| 서브모듈 | 설명 | 기술 스택 | 포트 |
+|---|---|---|---|
+| `auth-server` | 인증 서비스 (OAuth, JWT, 사용자 인증) | NestJS, MySQL 8, Redis | 8000 |
+| `authz-server` | 권한 관리 서비스 (RBAC, 역할·권한) | NestJS, MySQL 8, Redis | 8100 |
+| `auth-client` | 인증 UI 클라이언트 | Next.js 15, Tailwind CSS | 3001 |
+| `portal-server` | 포털 백엔드 서비스 | NestJS | - |
+| `portal-client` | 포털 사용자 클라이언트 | Next.js 15, Tailwind CSS | 3000 |
+| `portal-admin-client` | 포털 관리자 클라이언트 | Next.js 15, Tailwind CSS | 3002 |
+| `my-pick-server` | My Pick 백엔드 서비스 | NestJS | - |
+| `my-pick-client` | My Pick 사용자 클라이언트 | Next.js 15, Tailwind CSS | - |
+| `my-pick-admin-client` | My Pick 관리자 클라이언트 | Next.js 15, Tailwind CSS | - |
 
-- **msa-network**: 마이크로서비스 간 통신
-- **shared-network**: 공유 리소스 접근
-- **auth-network**: auth-server 내부 통신
-- **authz-network**: authz-server 내부 통신
+### 공유·인프라
+
+| 서브모듈 | 설명 |
+|---|---|
+| `shared-lib` | 공유 라이브러리 모노레포 (pnpm 워크스페이스, 23개 `@krgeobuk/*` 패키지) |
+| `krgeobuk-deployment` | Jenkins CI/CD 파이프라인, Jenkins·Verdaccio K8s 배포 매니페스트 |
+| `krgeobuk-infrastructure` | Docker Compose 로컬 인프라 (MySQL, Redis, K8s Dashboard) |
+| `krgeobuk-k8s` | 서비스별 Kubernetes 매니페스트 (Kustomize dev/prod 오버레이) |
+
+---
 
 ## 기술 스택
 
-### 백엔드
-- **NestJS** - 엔터프라이즈급 Node.js 프레임워크
-- **TypeScript** - ES 모듈 완전 지원
-- **MySQL 8** - 서비스별 독립 데이터베이스
-- **Redis** - 캐싱 및 세션 관리
+| 분류 | 기술 |
+|---|---|
+| 백엔드 프레임워크 | NestJS 10 |
+| 프론트엔드 프레임워크 | Next.js 15 |
+| 언어 | TypeScript (ESM) |
+| 데이터베이스 | MySQL 8 (서비스별 독립) |
+| 캐시·세션 | Redis |
+| 컨테이너 | Docker, Kubernetes (k3s) |
+| 패키지 관리 | pnpm (공유 라이브러리), npm (각 서비스) |
+| NPM 레지스트리 | Verdaccio (K8s 운영, `krgeobuk-deployment`에서 관리) |
+| CI/CD | Jenkins (K8s 운영) |
 
-### 프론트엔드
-- **Next.js 15** - React 프레임워크
-- **Tailwind CSS** - 유틸리티 기반 CSS
+---
 
-### 인프라
-- **Docker** - 컨테이너화
-- **Verdaccio** - 프라이빗 NPM 레지스트리
-- **pnpm** - 고성능 패키지 매니저
+## 초기 설정
 
-## 빠른 시작
-
-### 사전 요구사항
-
-- Node.js 18+
-- pnpm 8+
-- Docker & Docker Compose
-- Git
-
-### 초기 설정
+### 1. 저장소 클론 (서브모듈 포함)
 
 ```bash
-# 1. 저장소 클론 (서브모듈 포함)
-git clone --recursive https://github.com/your-org/krgeobuk-infra.git
+git clone --recursive https://github.com/ryongmi/krgeobuk-infra.git
 cd krgeobuk-infra
+```
 
-# 2. 서브모듈 업데이트
+이미 클론한 경우 서브모듈 초기화:
+
+```bash
 git submodule update --init --recursive
+```
 
-# 3. Verdaccio 시작 (공유 라이브러리 레지스트리)
-cd shared-lib
-pnpm docker:up
-pnpm build
+### 2. 로컬 인프라 시작
 
-# 4. 백엔드 서비스 시작
-cd ../auth-server
-npm install
+MySQL, Redis 등 로컬 개발용 인프라를 시작합니다.
+
+```bash
+cd krgeobuk-infrastructure
 npm run docker:local:up
+```
+
+### 3. 공유 라이브러리 빌드
+
+```bash
+cd shared-lib
+pnpm install
+pnpm build
+```
+
+### 4. 백엔드 서비스 시작
+
+```bash
+cd auth-server
+npm install
 npm run start:debug
 
 cd ../authz-server
 npm install
-npm run docker:local:up
 npm run start:debug
+```
 
-# 5. 프론트엔드 시작
-cd ../portal-client
+### 5. 프론트엔드 시작
+
+```bash
+cd portal-client
 npm install
 npm run dev
 ```
 
-자세한 가이드는 [QUICKSTART.md](./QUICKSTART.md)를 참조하세요.
-
-## 프로젝트 구조
-
-```
-krgeobuk-infra/
-├── auth-server/          # 인증 서비스
-├── authz-server/         # 권한 관리 서비스
-├── portal-client/        # 포털 클라이언트
-├── shared-lib/           # 공유 라이브러리 모노레포
-│   ├── packages/
-│   │   ├── core/         # 핵심 클래스, 데코레이터
-│   │   ├── auth/         # 인증 관련 기능
-│   │   ├── jwt/          # JWT 토큰 관리
-│   │   ├── oauth/        # OAuth 제공자
-│   │   └── ...
-├── docs/                 # 문서
-├── scripts/              # 자동화 스크립트
-├── CLAUDE.md            # AI 어시스턴트 가이드
-└── README.md            # 이 파일
-```
-
-## 공유 라이브러리 패키지
-
-### 핵심 인프라
-- `@krgeobuk/core` - 기본 클래스, 데코레이터, 필터, 인터셉터
-- `@krgeobuk/database-config` - TypeORM 및 Redis 설정
-- `@krgeobuk/swagger` - API 문서화
-- `@krgeobuk/eslint-config` - 코드 품질 설정
-- `@krgeobuk/tsconfig` - TypeScript 설정
-- `@krgeobuk/jest-config` - 테스트 설정
-
-### 도메인 패키지
-- `@krgeobuk/auth` - 인증 DTO, 인터페이스
-- `@krgeobuk/jwt` - JWT 토큰 관리, 가드
-- `@krgeobuk/oauth` - OAuth (Google, Naver)
-- `@krgeobuk/user` - 사용자 관리
-- `@krgeobuk/role` - 역할 기반 접근 제어
-- `@krgeobuk/service` - 서비스 등록 관리
-- `@krgeobuk/shared` - 공유 DTO 및 인터페이스
+---
 
 ## 개발 워크플로우
 
-### 일반 개발
+### 백엔드 서비스 (NestJS)
 
 ```bash
-# 개발 서버 시작 (NestJS 서비스)
-npm run start:dev          # 일반 모드
-npm run start:debug        # 디버그 모드
+npm run start:dev        # 개발 서버
+npm run start:debug      # 디버그 모드
 
-# 개발 서버 시작 (Next.js)
-npm run dev
+npm run build            # TypeScript 빌드
+npm run lint:fix         # 린팅 + 자동 수정
+npm run format           # Prettier 포맷팅
 
-# 빌드
-npm run build
-npm run build:watch        # 감시 모드
-
-# 코드 품질
-npm run lint               # 린팅
-npm run lint-fix           # 자동 수정
-npm run format             # Prettier 포맷팅
-
-# 테스트
-npm run test               # 단위 테스트
-npm run test:watch         # 감시 모드
-npm run test:cov           # 커버리지
-npm run test:e2e           # E2E 테스트
+npm run test             # 단위 테스트
+npm run test:cov         # 커버리지
+npm run test:e2e         # E2E 테스트
 ```
 
-### Docker 환경
+### 프론트엔드 (Next.js)
 
 ```bash
-# 로컬 개발
-npm run docker:local:up
-npm run docker:local:down
-
-# 개발/프로덕션
-npm run docker:dev:up
-npm run docker:prod:up
+npm run dev              # 개발 서버
+npm run build            # 프로덕션 빌드
+npm run type-check       # TypeScript 타입 검사
+npm run lint:fix         # 린팅 + 자동 수정
 ```
 
-### 공유 라이브러리 관리
+### 공유 라이브러리 (shared-lib)
 
 ```bash
-# Verdaccio 관리
-pnpm docker:up
-pnpm docker:down
+pnpm build               # 전체 빌드
+pnpm clean               # 빌드 아티팩트 정리
+pnpm lint:fix            # 린팅
+pnpm format              # 포맷팅
 
-# 패키지 빌드
-pnpm build
-pnpm clean
-
-# 특정 패키지 작업
+# 특정 패키지만 빌드
 pnpm --filter @krgeobuk/core build
 
-# 로컬 게시
+# 패키지 게시 (패키지 디렉토리에서)
 pnpm verdaccio:publish
 ```
 
-## 문서
+---
 
-- [빠른 시작 가이드](./QUICKSTART.md) - 상세한 설치 및 실행 가이드
-- [배포 가이드](./krgeobuk-k8s/docs/DEPLOYMENT.md) - 환경별 배포 전략
-- [아키텍처 문서](./docs/ARCHITECTURE.md) - 시스템 아키텍처 상세 설명
-- [Claude 개발 가이드](./CLAUDE.md) - AI 어시스턴트용 개발 표준
+## 포트 구성
 
-### 서비스별 가이드
-- [auth-server/CLAUDE.md](./auth-server/CLAUDE.md) - 인증 서비스 개발 가이드
-- [authz-server/CLAUDE.md](./authz-server/CLAUDE.md) - NestJS 공통 개발 표준
-- [portal-client/CLAUDE.md](./portal-client/CLAUDE.md) - Next.js 개발 가이드
-- [shared-lib/CLAUDE.md](./shared-lib/CLAUDE.md) - 공유 라이브러리 개발 표준
+| 서비스 | 앱 포트 | MySQL | Redis |
+|---|---|---|---|
+| auth-server | 8000 | 3307 | 6380 |
+| authz-server | 8100 | 3308 | 6381 |
+| portal-client | 3000 | - | - |
+| auth-client | 3001 | - | - |
+| portal-admin-client | 3002 | - | - |
+| Verdaccio | - | - | - | ← K8s 운영 |
 
-## 개발 참고사항
+---
 
-### TypeScript 경로 별칭
-모든 서비스에서 공통 사용:
-```typescript
-@modules/*  → src/modules/*
-@common/*   → src/common/*
-@config/*   → src/config/*
-@database/* → src/database/*
+## 서브모듈 업데이트
+
+```bash
+# 전체 서브모듈 최신화
+git submodule update --remote --merge
+
+# 특정 서브모듈만
+git submodule update --remote auth-server
 ```
 
-### 포트 구성
-- **auth-server**: 8000 (MySQL: 3307, Redis: 6380)
-- **authz-server**: 8100 (MySQL: 3308, Redis: 6381)
-- **portal-client**: 3000
-- **Verdaccio**: 4873
+---
 
-### 환경 설정
-- 각 서비스별 `envs/` 디렉토리에 환경 파일 저장
-- Docker Compose를 통해 환경 변수 로드
-- 서비스별 독립적 설정 관리
+## 문서
 
-## 기여하기
+| 문서 | 설명 |
+|---|---|
+| [CLAUDE.md](./CLAUDE.md) | Claude Code 개발 가이드 (AI 어시스턴트용) |
+| [docs/QUICKSTART.md](./docs/QUICKSTART.md) | 상세 초기 설정 가이드 |
+| [docs/KUBERNETES_ARCHITECTURE.md](./docs/KUBERNETES_ARCHITECTURE.md) | K8s 아키텍처 |
+| [docs/DOMAIN_ARCHITECTURE_PLAN.md](./docs/DOMAIN_ARCHITECTURE_PLAN.md) | 도메인 아키텍처 |
+| [docs/BFF_ARCHITECTURE_DESIGN.md](./docs/BFF_ARCHITECTURE_DESIGN.md) | BFF 아키텍처 설계 |
 
-1. Feature 브랜치 생성 (`git checkout -b feature/AmazingFeature`)
-2. 변경사항 커밋 (`git commit -m 'Add some AmazingFeature'`)
-3. 브랜치에 Push (`git push origin feature/AmazingFeature`)
-4. Pull Request 생성
+### 서비스별 개발 가이드
 
-## 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 배포됩니다.
-
-## 지원
-
-문의사항이나 이슈가 있으시면 [GitHub Issues](https://github.com/your-org/krgeobuk-infra/issues)에 등록해주세요.
+| 가이드 | 설명 |
+|---|---|
+| [authz-server/CLAUDE.md](./authz-server/CLAUDE.md) | NestJS 공통 개발 표준 (모든 백엔드 서버 적용) |
+| [auth-server/CLAUDE.md](./auth-server/CLAUDE.md) | OAuth·JWT 특화 패턴 |
+| [portal-client/CLAUDE.md](./portal-client/CLAUDE.md) | Next.js 15 개발 가이드 |
+| [shared-lib/CLAUDE.md](./shared-lib/CLAUDE.md) | 공유 라이브러리 패키지 개발 표준 |
+| [krgeobuk-deployment/README.md](./krgeobuk-deployment/README.md) | CI/CD·Jenkins·Verdaccio 배포 가이드 |
+| [krgeobuk-infrastructure/README.md](./krgeobuk-infrastructure/README.md) | 로컬 인프라 운영 가이드 |
+| [krgeobuk-k8s/README.md](./krgeobuk-k8s/README.md) | Kubernetes 배포 가이드 |
