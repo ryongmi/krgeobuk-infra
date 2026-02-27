@@ -36,13 +36,15 @@ krgeobuk-infra는 Git 서브모듈을 통해 관리되는 마이크로서비스 
 각 서비스의 상세한 개발 가이드는 해당 리포지토리의 CLAUDE.md 파일을 참조하세요:
 
 ### NestJS 서버 개발
-- **[authz-server/CLAUDE.md](./authz-server/CLAUDE.md)** - **모든 NestJS 서버의 공통 개발 표준** 포함
+- **[docs/KRGEOBUK_NESTJS_SERVER_GUIDE.md](./docs/KRGEOBUK_NESTJS_SERVER_GUIDE.md)** - **모든 NestJS 서버의 공통 개발 표준**
   - API 응답 포맷 표준
   - 컨트롤러/서비스 개발 가이드
   - TypeScript 코딩 표준
   - Repository 최적화
   - TCP 컨트롤러 표준
 - **[auth-server/CLAUDE.md](./auth-server/CLAUDE.md)** - OAuth, JWT 특화 패턴
+- **[authz-server/CLAUDE.md](./authz-server/CLAUDE.md)** - RBAC 권한 시스템 특화 패턴
+- **[portal-server/CLAUDE.md](./portal-server/CLAUDE.md)** - 서비스 관리 특화 패턴
 
 ### 프론트엔드 개발
 - **[portal-client/CLAUDE.md](./portal-client/CLAUDE.md)** - Next.js 15, React 패턴
