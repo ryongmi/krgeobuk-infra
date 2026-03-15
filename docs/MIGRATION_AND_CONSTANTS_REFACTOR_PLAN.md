@@ -239,7 +239,7 @@ role:read, role:create, role:update, role:delete, role:manage
 permission:read, permission:create, permission:update, permission:delete, permission:manage
 user-role:assign, user-role:revoke, user-role:manage
 role-permission:assign, role-permission:revoke, role-permission:manage
-service-visible-role:manage
+service-visible-role:assign, service-visible-role:revoke, service-visible-role:manage
 authorization:check, authorization:manage
 ```
 
