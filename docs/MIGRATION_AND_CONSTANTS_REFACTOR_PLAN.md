@@ -281,7 +281,7 @@ service:read, service:create, service:update, service:delete, service:manage
 ## 작업 순서
 
 ```
-[1단계] shared-lib 패키지 수정 (constants 이관)
+[1단계] shared-lib 패키지 수정 (constants 이관) ✅
   ├── @krgeobuk/core         - user.constants.ts 추가 (USER_CONSTANTS)
   ├── @krgeobuk/role         - constants 추가
   ├── @krgeobuk/permission   - constants 추가
@@ -292,30 +292,31 @@ service:read, service:create, service:update, service:delete, service:manage
   ├── @krgeobuk/service      - constants 추가 (신규, ServicePermissions)
   └── @krgeobuk/authorization - 불필요 상수 정리
 
-[2단계] shared-lib 빌드 & 배포
+[2단계] shared-lib 빌드 & 배포 ✅
   └── pnpm build → pnpm verdaccio:publish (각 패키지)
 
-[3단계] authz-server 수정
+[3단계] authz-server 수정 ✅
   ├── authorization.service.ts - superAdmin 글로벌 역할 처리 수정
-  └── 컨트롤러 6개 - import 경로 수정 + roleServiceId 추가
+  └── 컨트롤러 6개 - import 경로 수정 + serviceId 수정 (roleServiceId 오타 수정)
 
-[4단계] Migration 설정 (서버별 data-source.ts + package.json 스크립트)
-  ├── portal-server
-  ├── authz-server
-  └── auth-server
+[4단계] Migration 설정 (서버별 data-source.ts + package.json 스크립트) ✅
+  ├── portal-server - data-source.ts + migration:run/revert (--env-file=envs/.env.migration)
+  ├── authz-server  - data-source.ts + migration:run/revert (--env-file=envs/.env.migration)
+  └── auth-server   - data-source.ts + migration:run/revert (--env-file=envs/.env.migration)
 
-[5단계] Migration 파일 작성
+[5단계] Migration 파일 작성 ✅
   ├── portal-server: CreateServiceTable → SeedInitialServices
-  ├── authz-server: CreateAuthzTables → SeedRoles → SeedPermissions → SeedRolePermissions → SeedServiceVisibleRoles
-  └── auth-server: CreateAuthTables → SeedAdminUser → SeedAdminUserRole
+  ├── authz-server: CreateAuthzTables → SeedRoles → SeedPermissions → SeedRolePermissions → SeedServiceVisibleRoles → SeedAdminUserRole
+  └── auth-server: CreateAuthTables → SeedAdminUser → SeedAdminOauthAccount
 
-[6단계] 검증
-  └── 로컬 Docker 환경에서 migration:run 실행 확인
+[6단계] 검증 ✅
+  └── 로컬 Docker 환경에서 migration:run 실행 완료 (2026-03-16)
 ```
 
 ---
 
 ## 미결 사항
 
-- [x] `SeedAdminUser` 초기 관리자 계정 비밀번호 확정 → `2316@@qwer` (bcrypt hash 처리 후 저장)
+- [x] `SeedAdminUser` 초기 관리자 계정 비밀번호 확정 → `2316@@qwer` (scrypt hash 처리 후 저장)
+- [x] 로컬 Docker 환경 migration 검증 완료
 - [ ] my-pick-server 권한 상수 및 migration은 추후 별도 진행
