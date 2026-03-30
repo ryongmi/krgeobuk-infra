@@ -15,9 +15,9 @@ krgeobuk-infra/
 ├── portal-server/            # 포털 백엔드 서비스
 ├── portal-client/            # 포털 사용자 클라이언트
 ├── portal-admin-client/      # 포털 관리자 클라이언트
-├── my-pick-server/           # My Pick 백엔드 서비스
-├── my-pick-client/           # My Pick 사용자 클라이언트
-├── my-pick-admin-client/     # My Pick 관리자 클라이언트
+├── mypick-server/           # My Pick 백엔드 서비스
+├── mypick-client/           # My Pick 사용자 클라이언트
+├── mypick-admin-client/     # My Pick 관리자 클라이언트
 ├── shared-lib/               # 공유 라이브러리 모노레포 (23개 @krgeobuk/* 패키지)
 ├── krgeobuk-deployment/      # CI/CD 파이프라인, Jenkins·Verdaccio K8s 배포
 ├── krgeobuk-infrastructure/  # Docker Compose 로컬 인프라 (MySQL, Redis)
@@ -41,9 +41,9 @@ krgeobuk-infra/
 | `portal-server` | 포털 백엔드 서비스 | NestJS | - |
 | `portal-client` | 포털 사용자 클라이언트 | Next.js 15, Tailwind CSS | 3000 |
 | `portal-admin-client` | 포털 관리자 클라이언트 | Next.js 15, Tailwind CSS | 3002 |
-| `my-pick-server` | My Pick 백엔드 서비스 | NestJS | - |
-| `my-pick-client` | My Pick 사용자 클라이언트 | Next.js 15, Tailwind CSS | - |
-| `my-pick-admin-client` | My Pick 관리자 클라이언트 | Next.js 15, Tailwind CSS | - |
+| `mypick-server` | My Pick 백엔드 서비스 | NestJS | - |
+| `mypick-client` | My Pick 사용자 클라이언트 | Next.js 15, Tailwind CSS | - |
+| `mypick-admin-client` | My Pick 관리자 클라이언트 | Next.js 15, Tailwind CSS | - |
 
 ### 공유·인프라
 

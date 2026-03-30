@@ -19,8 +19,8 @@ krgeobuk.com
 ├── auth.krgeobuk.com              # 통합 인증 서비스
 ├── portal.krgeobuk.com            # 통합 포털 (사용자)
 ├── portal-admin.krgeobuk.com      # 통합 포털 (관리자)
-├── mypick.krgeobuk.com            # my-pick 서비스 (사용자)
-├── mypick-admin.krgeobuk.com      # my-pick 서비스 (관리자)
+├── mypick.krgeobuk.com            # mypick 서비스 (사용자)
+├── mypick-admin.krgeobuk.com      # mypick 서비스 (관리자)
 ├── api.krgeobuk.com               # API 게이트웨이
 ├── docs.krgeobuk.com              # API 문서
 ├── developers.krgeobuk.com        # 개발자 포털
@@ -74,7 +74,7 @@ const NAMING_CONVENTION = {
   - 목적: 시스템 관리, 사용자/역할/권한 관리
   - 대상: 시스템 관리자, 운영진
 
-#### my-pick 서비스
+#### mypick 서비스
 - **사용자 서비스**: `mypick.krgeobuk.com`
   - 목적: 크리에이터 콘텐츠 탐색, 개인화 서비스
   - 대상: 일반 사용자, 크리에이터 팬
@@ -227,7 +227,7 @@ auth.krgeobuk.com              A    203.0.113.10
 portal.krgeobuk.com            A    203.0.113.20
 portal-admin.krgeobuk.com      A    203.0.113.21
 
-# my-pick 서비스
+# mypick 서비스
 mypick.krgeobuk.com            A    203.0.113.30
 mypick-admin.krgeobuk.com      A    203.0.113.31
 
@@ -343,9 +343,9 @@ services:
     networks:
       - krgeobuk-network
 
-  # my-pick 서비스 (사용자)
+  # mypick 서비스 (사용자)
   mypick-service:
-    build: ./my-pick-web
+    build: ./mypick-web
     container_name: krgeobuk-mypick
     ports:
       - "3003:3000"
@@ -355,9 +355,9 @@ services:
     networks:
       - krgeobuk-network
 
-  # my-pick 서비스 (관리자)
+  # mypick 서비스 (관리자)
   mypick-admin-service:
-    build: ./my-pick-admin
+    build: ./mypick-admin
     container_name: krgeobuk-mypick-admin
     ports:
       - "3004:3000"
@@ -530,10 +530,10 @@ const TokenBlacklist = {
 - 성능 및 보안 테스트
 ```
 
-#### Phase 3: my-pick 서비스 전환 (2주)
+#### Phase 3: mypick 서비스 전환 (2주)
 ```bash
 # 1. 도메인 변경
-- my-pick-client → mypick.krgeobuk.com
+- mypick-client → mypick.krgeobuk.com
 - 관리자 분리 → mypick-admin.krgeobuk.com
 
 # 2. SSO 통합
@@ -776,10 +776,10 @@ const METRICS = {
 - [ ] 성능 테스트 및 최적화
 - [ ] 사용자 수용 테스트 (UAT)
 
-### Phase 3: my-pick 서비스 전환
+### Phase 3: mypick 서비스 전환
 - [ ] mypick.krgeobuk.com DNS 설정
 - [ ] mypick-admin.krgeobuk.com DNS 설정
-- [ ] 기존 my-pick-client 분리 작업
+- [ ] 기존 mypick-client 분리 작업
 - [ ] SSO 인증 통합
 - [ ] API 엔드포인트 업데이트
 - [ ] 데이터베이스 접근 권한 설정
@@ -803,7 +803,7 @@ const METRICS = {
 
 ## 🔗 관련 문서
 
-- [MY_PICK_PROJECT_SEPARATION_PLAN.md](./MY_PICK_PROJECT_SEPARATION_PLAN.md) - my-pick 프로젝트 분리 계획
+- [MY_PICK_PROJECT_SEPARATION_PLAN.md](./MY_PICK_PROJECT_SEPARATION_PLAN.md) - mypick 프로젝트 분리 계획
 - [PORTAL_CLIENT_SEPARATION_PLAN.md](./portal-client/PORTAL_CLIENT_SEPARATION_PLAN.md) - portal-client 분리 계획
 - [krgeobuk 인프라 아키텍처](./CLAUDE.md) - 전체 시스템 아키텍처
 

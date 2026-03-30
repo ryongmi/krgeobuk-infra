@@ -76,7 +76,7 @@ user:read, user:create, user:update, user:delete, user:manage
 service:read, service:create, service:update, service:delete, service:manage
 ```
 
-> my-pick-server 관련 패키지는 미구현 상태로 추후 별도 진행.
+> mypick-server 관련 패키지는 미구현 상태로 추후 별도 진행.
 
 ### 1-5. authz-server 컨트롤러 import 수정
 
@@ -202,7 +202,7 @@ NestJS DI 없이 환경변수를 직접 읽는 방식.
 | `550e8400-...-0001` | auth-service | 인증 서비스 | false | false |
 | `550e8400-...-0002` | authz-service | 권한 서비스 | false | false |
 | `550e8400-...-0003` | portal-service | 포탈 서비스 | true | false |
-| `550e8400-...-0004` | my-pick-server | MyPick 서비스 | true | true |
+| `550e8400-...-0004` | mypick-server | MyPick 서비스 | true | true |
 
 #### authz-server
 
@@ -222,7 +222,7 @@ NestJS DI 없이 환경변수를 직접 읽는 방식.
 | `admin` | auth-service(`...0001`) | 2 |
 | `admin` | authz-service(`...0002`) | 2 |
 | `admin` | portal-service(`...0003`) | 2 |
-| `admin` | my-pick-service(`...0004`) | 2 |
+| `admin` | mypick-service(`...0004`) | 2 |
 | `roleManager` | authz-service(`...0002`) | 3 |
 | `permissionManager` | authz-service(`...0002`) | 3 |
 
@@ -257,11 +257,11 @@ service:read, service:create, service:update, service:delete, service:manage
 | auth-service | superAdmin |
 | authz-service | superAdmin |
 | portal-service | superAdmin |
-| my-pick-service | superAdmin |
+| mypick-service | superAdmin |
 | auth-service | admin(auth) |
 | authz-service | admin(authz), roleManager, permissionManager |
 | portal-service | admin(portal) |
-| my-pick-service | admin(my-pick) |
+| mypick-service | admin(mypick) |
 
 #### auth-server
 
@@ -319,4 +319,4 @@ service:read, service:create, service:update, service:delete, service:manage
 
 - [x] `SeedAdminUser` 초기 관리자 계정 비밀번호 확정 → `2316@@qwer` (scrypt hash 처리 후 저장)
 - [x] 로컬 Docker 환경 migration 검증 완료
-- [ ] my-pick-server 권한 상수 및 migration은 추후 별도 진행
+- [ ] mypick-server 권한 상수 및 migration은 추후 별도 진행
