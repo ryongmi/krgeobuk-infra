@@ -13,11 +13,11 @@
 [submodule "portal-client"]
 	path = portal-client
 	url = https://github.com/ryongmi/portal-client.git
-[submodule "my-pick-client"]
-	path = my-pick-client
+[submodule "mypick-client"]
+	path = mypick-client
 	url = https://github.com/ryongmi/mypick-client.git
-[submodule "my-pick-server"]
-	path = my-pick-server
+[submodule "mypick-server"]
+	path = mypick-server
 	url = https://github.com/ryongmi/mypick-server.git
 [submodule "auth-client"]
 	path = auth-client
@@ -25,8 +25,8 @@
 [submodule "portal-admin-client"]
 	path = portal-admin-client
 	url = https://github.com/ryongmi/portal-admin-client.git
-[submodule "my-pick-admin-client"]
-	path = my-pick-admin-client
+[submodule "mypick-admin-client"]
+	path = mypick-admin-client
 	url = https://github.com/ryongmi/mypick-admin-client.git
 [submodule "krgeobuk-deployment"]
 	path = krgeobuk-deployment
